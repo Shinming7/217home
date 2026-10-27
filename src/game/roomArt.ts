@@ -2,9 +2,9 @@ import { PAL } from "./palette";
 import type { Phase } from "./types";
 import {
   CORKBOARD,
+  OCTAGON,
   PENDANT,
   PHOTO_FRAMES,
-  RUG,
   WINDOW,
   type PropSpec,
 } from "./roomData";
@@ -45,16 +45,16 @@ function drawFloor(ctx: Ctx) {
   for (let row = 0; row < 12; row += 1) {
     const y = 64 + row * 16;
     px(ctx, 0, y, 384, 16, row % 2 === 0 ? "#c97f52" : "#c0774b");
-    px(ctx, 0, y, 384, 1, "rgba(234,212,170,0.22)");
-    px(ctx, 0, y + 15, 384, 1, "#9a5f3f");
+    px(ctx, 0, y, 384, 1, "rgba(234,212,170,0.10)");
+    px(ctx, 0, y + 15, 384, 1, "rgba(122,72,49,0.55)");
     const offset = row % 2 === 0 ? 0 : 48;
     for (let x = offset; x < 384; x += 96) {
-      px(ctx, x, y, 1, 16, "rgba(115,62,57,0.55)");
-      px(ctx, x + 1, y + 1, 1, 14, "rgba(234,212,170,0.12)");
+      px(ctx, x, y, 1, 16, "rgba(115,62,57,0.35)");
+      px(ctx, x + 1, y + 1, 1, 14, "rgba(234,212,170,0.08)");
     }
     for (let grain = 0; grain < 3; grain += 1) {
       const gx = (row * 53 + grain * 71 + 17) % 340;
-      px(ctx, gx, y + 5 + grain * 3, 10 + (grain % 2) * 6, 1, "rgba(115,62,57,0.22)");
+      px(ctx, gx, y + 5 + grain * 3, 10 + (grain % 2) * 6, 1, "rgba(115,62,57,0.14)");
     }
   }
   px(ctx, 0, 64, 384, 2, "rgba(24,20,37,0.30)");
@@ -62,39 +62,149 @@ function drawFloor(ctx: Ctx) {
   px(ctx, 0, 68, 384, 3, "rgba(24,20,37,0.06)");
 }
 
-function drawRug(ctx: Ctx) {
-  const { x, y, w, h } = RUG;
-  px(ctx, x - 3, y - 3, w + 6, h + 6, "rgba(24,20,37,0.20)");
-  px(ctx, x, y, w, h, PAL.ink);
-  px(ctx, x + 1, y + 1, w - 2, h - 2, PAL.clay);
-  px(ctx, x + 2, y + 2, w - 4, h - 4, PAL.cream);
-  px(ctx, x + 3, y + 3, w - 6, h - 6, PAL.ink);
-  px(ctx, x + 4, y + 4, w - 8, h - 8, PAL.navy);
-  px(ctx, x + 4, y + 4, w - 8, 1, PAL.slate);
-  px(ctx, x + 6, y + 6, w - 12, h - 12, PAL.night);
+type Point = { x: number; y: number };
 
-  const cx = x + w / 2;
-  const cy = y + h / 2;
-  for (let i = -13; i <= 13; i += 1) {
-    const lift = 13 - Math.abs(i);
-    px(ctx, cx + i, cy - lift, 1, 1, "rgba(234,212,170,0.45)");
-    px(ctx, cx + i, cy + lift, 1, 1, "rgba(234,212,170,0.45)");
-    if (lift % 4 === 0) {
-      px(ctx, cx + i, cy - lift, 1, 1, PAL.steel);
-      px(ctx, cx + i, cy + lift, 1, 1, PAL.steel);
+function octagonPoints(cx: number, cy: number, rx: number, ry: number): Point[] {
+  const points: Point[] = [];
+  for (let i = 0; i < 8; i += 1) {
+    const angle = Math.PI / 8 + (i * Math.PI) / 4;
+    points.push({ x: cx + Math.cos(angle) * rx, y: cy + Math.sin(angle) * ry });
+  }
+  return points;
+}
+
+function fillPolygon(ctx: Ctx, points: Point[], color: string) {
+  const ys = points.map((point) => point.y);
+  const top = Math.floor(Math.min(...ys));
+  const bottom = Math.ceil(Math.max(...ys));
+  ctx.fillStyle = color;
+  for (let y = top; y <= bottom; y += 1) {
+    const crossings: number[] = [];
+    for (let i = 0; i < points.length; i += 1) {
+      const a = points[i];
+      const b = points[(i + 1) % points.length];
+      if ((a.y <= y && b.y > y) || (b.y <= y && a.y > y)) {
+        crossings.push(a.x + ((b.x - a.x) * (y - a.y)) / (b.y - a.y));
+      }
+    }
+    crossings.sort((m, n) => m - n);
+    for (let i = 0; i + 1 < crossings.length; i += 2) {
+      const left = Math.round(crossings[i]);
+      const right = Math.round(crossings[i + 1]);
+      if (right > left) ctx.fillRect(left, y, right - left, 1);
     }
   }
-  px(ctx, cx - 3, cy - 1, 7, 3, PAL.clay);
-  px(ctx, cx - 1, cy - 3, 3, 7, PAL.clay);
-  px(ctx, cx - 1, cy - 1, 3, 3, PAL.cream);
+}
 
-  for (let fx = x + 8; fx < x + w - 8; fx += 8) {
-    px(ctx, fx, y + 5, 3, 1, "rgba(234,212,170,0.5)");
-    px(ctx, fx, y + h - 6, 3, 1, "rgba(234,212,170,0.5)");
+const DIGITS: Record<string, string[]> = {
+  "2": ["110", "001", "110", "100", "111"],
+  "1": ["010", "110", "010", "010", "111"],
+  "7": ["111", "001", "010", "010", "010"],
+};
+
+function drawFightLogo(ctx: Ctx, cx: number, cy: number) {
+  ctx.fillStyle = "rgba(234,212,170,0.30)";
+  fillPolygon(ctx, octagonPoints(cx, cy, 27, 18), "rgba(234,212,170,0.30)");
+  fillPolygon(ctx, octagonPoints(cx, cy, 25.5, 16.5), PAL.navy);
+
+  const scale = 2;
+  const glyphW = 3 * scale;
+  const gap = 2;
+  const text = "217";
+  let cursor = Math.round(cx - (glyphW * text.length + gap * (text.length - 1)) / 2);
+  const top = Math.round(cy - (5 * scale) / 2);
+  for (const char of text) {
+    const glyph = DIGITS[char];
+    ctx.fillStyle = PAL.cream;
+    for (let row = 0; row < 5; row += 1) {
+      for (let col = 0; col < 3; col += 1) {
+        if (glyph[row][col] === "1") {
+          ctx.fillRect(cursor + col * scale, top + row * scale, scale, scale);
+        }
+      }
+    }
+    cursor += glyphW + gap;
   }
-  for (let fy = y + 10; fy < y + h - 10; fy += 8) {
-    px(ctx, x + 5, fy, 1, 3, "rgba(234,212,170,0.5)");
-    px(ctx, x + w - 6, fy, 1, 3, "rgba(234,212,170,0.5)");
+}
+
+function drawOctagon(ctx: Ctx) {
+  const { x, y, w, h } = OCTAGON;
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const rx = w / 2;
+  const ry = h / 2;
+
+  fillPolygon(ctx, octagonPoints(cx, cy + 3, rx + 2, ry + 2), "rgba(24,20,37,0.25)");
+  fillPolygon(ctx, octagonPoints(cx, cy, rx, ry), PAL.ink);
+  fillPolygon(ctx, octagonPoints(cx, cy, rx - 2.5, ry - 2), PAL.clay);
+  fillPolygon(ctx, octagonPoints(cx, cy, rx - 5, ry - 4), PAL.night);
+  fillPolygon(ctx, octagonPoints(cx, cy, rx - 9, ry - 7.5), PAL.navy);
+  fillPolygon(ctx, octagonPoints(cx, cy, rx - 10, ry - 8.5), PAL.steel);
+  fillPolygon(ctx, octagonPoints(cx, cy, rx - 11, ry - 9.5), PAL.navy);
+  drawFightLogo(ctx, cx, cy);
+
+  const points = octagonPoints(cx, cy, rx - 4, ry - 3);
+  const back = [4, 5, 6, 7];
+  const fenceHeight = 18;
+
+  const edgeY = (a: Point, b: Point, xx: number) =>
+    a.y + ((b.y - a.y) * (xx - a.x)) / (b.x - a.x);
+  for (let i = 0; i < back.length - 1; i += 1) {
+    const a = points[back[i]];
+    const b = points[back[i + 1]];
+    const x1 = Math.round(Math.min(a.x, b.x));
+    const x2 = Math.round(Math.max(a.x, b.x));
+    for (let xx = x1; xx <= x2; xx += 1) {
+      const baseY = Math.round(edgeY(a, b, xx));
+      ctx.fillStyle = "rgba(139,155,180,0.13)";
+      ctx.fillRect(xx, baseY - fenceHeight, 1, fenceHeight);
+      ctx.fillStyle = "rgba(192,203,220,0.62)";
+      ctx.fillRect(xx, baseY - fenceHeight, 1, 1);
+      ctx.fillRect(xx, baseY - Math.round(fenceHeight * 0.5), 1, 1);
+      ctx.fillRect(xx, baseY, 1, 1);
+    }
+    for (let xx = x1 + 2; xx <= x2 - 2; xx += 4) {
+      const baseY = Math.round(edgeY(a, b, xx));
+      ctx.fillStyle = "rgba(139,155,180,0.52)";
+      ctx.fillRect(xx, baseY - fenceHeight + 1, 1, fenceHeight - 1);
+    }
+  }
+
+  for (const index of back) {
+    const post = points[index];
+    const px0 = Math.round(post.x) - 2;
+    const py0 = Math.round(post.y) - fenceHeight - 3;
+    px(ctx, px0, py0, 5, fenceHeight + 4, PAL.ink);
+    px(ctx, px0 + 1, py0 + 1, 3, fenceHeight + 2, PAL.steel);
+    px(ctx, px0 + 1, py0 + 1, 1, fenceHeight + 2, PAL.silver);
+    px(ctx, px0 + 1, py0, 3, 1, PAL.cream);
+  }
+
+  for (const index of [0, 1, 2, 3]) {
+    const post = points[index];
+    const px0 = Math.round(post.x) - 1;
+    const py0 = Math.round(post.y) - 6;
+    px(ctx, px0, py0, 3, 7, PAL.ink);
+    px(ctx, px0 + 1, py0 + 1, 1, 5, PAL.steel);
+  }
+
+  const leftPad = points[4];
+  const rightPad = points[7];
+  for (const [pad, color] of [
+    [leftPad, PAL.cherry],
+    [rightPad, PAL.blue],
+  ] as const) {
+    const px0 = Math.round(pad.x) - 2;
+    const py0 = Math.round(pad.y) - fenceHeight - 10;
+    px(ctx, px0, py0, 5, 8, PAL.ink);
+    px(ctx, px0 + 1, py0 + 1, 3, 6, color);
+    px(ctx, px0 + 1, py0 + 3, 3, 1, PAL.cream);
+  }
+
+  const gateA = points[2];
+  const gateB = points[1];
+  for (let xx = Math.round(gateA.x) + 2; xx < Math.round(gateB.x) - 1; xx += 4) {
+    px(ctx, xx, Math.round(gateA.y), 2, 1, PAL.cream);
   }
 }
 
@@ -177,7 +287,7 @@ export function createRoomCanvas(): HTMLCanvasElement {
   ctx.imageSmoothingEnabled = false;
   drawWall(ctx);
   drawFloor(ctx);
-  drawRug(ctx);
+  drawOctagon(ctx);
   PHOTO_FRAMES.forEach((frame) => drawPhoto(ctx, frame));
   drawCorkboard(ctx);
   drawPendant(ctx);
@@ -185,71 +295,94 @@ export function createRoomCanvas(): HTMLCanvasElement {
 }
 
 function drawBed(ctx: Ctx) {
-  px(ctx, 4, 51, 56, 5, "rgba(24,20,37,0.25)");
+  // 地面投影
+  px(ctx, 4, 40, 74, 4, "rgba(24,20,37,0.18)");
+  px(ctx, 10, 43, 62, 2, "rgba(24,20,37,0.10)");
 
   // 床腿
-  px(ctx, 3, 46, 6, 10, PAL.ink);
-  px(ctx, 4, 47, 4, 9, PAL.grape);
-  px(ctx, 55, 46, 6, 10, PAL.ink);
-  px(ctx, 56, 47, 4, 9, PAL.grape);
+  px(ctx, 14, 39, 7, 6, PAL.ink);
+  px(ctx, 15, 40, 5, 4, PAL.wood);
+  px(ctx, 64, 39, 7, 6, PAL.ink);
+  px(ctx, 65, 40, 5, 4, PAL.wood);
 
-  // 床头板
-  px(ctx, 2, 0, 60, 14, PAL.ink);
-  px(ctx, 3, 1, 58, 12, PAL.woodLight);
-  px(ctx, 3, 1, 58, 2, PAL.sand);
-  px(ctx, 7, 4, 50, 6, PAL.wood);
-  px(ctx, 7, 4, 50, 1, PAL.woodLight);
+  // 床头板（左端，高）
+  px(ctx, 0, 0, 12, 44, PAL.ink);
+  px(ctx, 1, 1, 10, 42, PAL.wood);
+  px(ctx, 1, 1, 10, 2, PAL.woodLight);
+  px(ctx, 1, 7, 10, 1, "rgba(24,20,37,0.30)");
+  for (const sy of [13, 21, 29]) px(ctx, 4, sy, 1, 5, "rgba(24,20,37,0.24)");
+  px(ctx, 9, 3, 1, 40, "rgba(24,20,37,0.28)");
+  px(ctx, 2, 0, 6, 1, PAL.sand);
 
-  // 床架与床垫
-  px(ctx, 0, 10, 64, 42, PAL.ink);
-  px(ctx, 1, 11, 62, 40, PAL.wood);
-  px(ctx, 1, 11, 62, 1, PAL.woodLight);
-  px(ctx, 4, 12, 56, 34, PAL.ink);
-  px(ctx, 5, 13, 54, 32, PAL.cream);
-  px(ctx, 5, 13, 54, 1, PAL.white);
+  // 床架前沿与床脚
+  px(ctx, 9, 32, 68, 8, PAL.ink);
+  px(ctx, 10, 33, 66, 6, PAL.wood);
+  px(ctx, 10, 33, 66, 1, PAL.woodLight);
+  px(ctx, 10, 38, 66, 1, "rgba(24,20,37,0.30)");
 
-  // 两只枕头
-  for (const pillowX of [7, 33]) {
-    px(ctx, pillowX, 14, 24, 12, PAL.ink);
-    px(ctx, pillowX + 1, 15, 22, 10, PAL.white);
-    px(ctx, pillowX + 1, 15, 22, 1, PAL.silver);
-    px(ctx, pillowX + 2, 23, 20, 2, "rgba(139,155,180,0.35)");
-  }
+  // 床垫
+  px(ctx, 10, 7, 66, 26, PAL.ink);
+  px(ctx, 11, 8, 64, 24, PAL.cream);
+  px(ctx, 11, 8, 64, 1, "rgba(255,255,255,0.30)");
+  px(ctx, 11, 29, 64, 3, "rgba(194,133,105,0.30)");
+
+  // 枕头
+  px(ctx, 15, 11, 22, 1, "rgba(24,20,37,0.12)");
+  px(ctx, 14, 12, 24, 14, PAL.white);
+  px(ctx, 14, 12, 1, 1, PAL.cream);
+  px(ctx, 37, 12, 1, 1, PAL.cream);
+  px(ctx, 14, 25, 1, 1, PAL.cream);
+  px(ctx, 37, 25, 1, 1, PAL.cream);
+  px(ctx, 14, 25, 24, 1, "rgba(139,155,180,0.40)");
+  px(ctx, 27, 13, 1, 11, "rgba(139,155,180,0.28)");
+  px(ctx, 36, 13, 1, 12, "rgba(139,155,180,0.30)");
+  px(ctx, 16, 24, 20, 1, "rgba(139,155,180,0.18)");
+
+  // 折回的床单
+  px(ctx, 39, 8, 1, 25, "rgba(24,20,37,0.20)");
+  px(ctx, 40, 9, 5, 24, PAL.cream);
+  px(ctx, 40, 9, 1, 24, "rgba(255,255,255,0.50)");
+  px(ctx, 45, 9, 1, 24, "rgba(194,133,105,0.55)");
+  px(ctx, 39, 9, 1, 2, PAL.cream);
 
   // 被子
-  px(ctx, 4, 26, 56, 20, PAL.ink);
-  px(ctx, 5, 27, 54, 18, PAL.teal);
-  px(ctx, 5, 27, 54, 4, PAL.blue);
-  px(ctx, 5, 27, 54, 1, PAL.cyan);
-  px(ctx, 5, 31, 54, 1, "rgba(24,20,37,0.35)");
-  px(ctx, 49, 32, 10, 13, PAL.blue);
-  px(ctx, 49, 32, 10, 1, PAL.cyan);
-  px(ctx, 49, 32, 1, 13, PAL.ink);
-  for (let stitchY = 34; stitchY < 44; stitchY += 4) {
-    for (let stitchX = 9; stitchX < 46; stitchX += 7) {
-      px(ctx, stitchX, stitchY, 2, 1, "rgba(234,212,170,0.35)");
-    }
-  }
+  px(ctx, 44, 6, 30, 28, PAL.ink);
+  px(ctx, 45, 7, 28, 26, PAL.teal);
+  px(ctx, 45, 7, 28, 1, "rgba(139,155,180,0.38)");
+  px(ctx, 72, 9, 1, 24, "rgba(24,20,37,0.28)");
+  // 褶皱
+  px(ctx, 53, 8, 1, 19, "rgba(24,20,37,0.18)");
+  px(ctx, 61, 8, 1, 15, "rgba(24,20,37,0.14)");
+  px(ctx, 48, 18, 24, 1, "rgba(192,203,220,0.14)");
+  px(ctx, 55, 25, 15, 1, "rgba(24,20,37,0.12)");
+  // 被子垂在床沿的两道褶
+  px(ctx, 49, 31, 5, 2, PAL.teal);
+  px(ctx, 58, 31, 7, 2, PAL.teal);
+  px(ctx, 68, 31, 4, 2, PAL.teal);
 
-  // 被子上的小熊
-  px(ctx, 17, 30, 3, 3, PAL.ink);
-  px(ctx, 18, 31, 1, 1, PAL.amber);
-  px(ctx, 25, 30, 3, 3, PAL.ink);
-  px(ctx, 26, 31, 1, 1, PAL.amber);
-  px(ctx, 17, 32, 11, 9, PAL.ink);
-  px(ctx, 18, 33, 9, 7, PAL.amber);
-  px(ctx, 18, 33, 9, 1, PAL.lemon);
-  px(ctx, 20, 36, 1, 1, PAL.ink);
-  px(ctx, 24, 36, 1, 1, PAL.ink);
-  px(ctx, 21, 38, 3, 2, PAL.cream);
-  px(ctx, 22, 38, 1, 1, PAL.ink);
-  px(ctx, 19, 41, 7, 4, PAL.ink);
-  px(ctx, 20, 42, 5, 2, PAL.amber);
+  // 小熊（靠在床尾板前）
+  px(ctx, 59, 14, 3, 3, PAL.ink);
+  px(ctx, 60, 15, 1, 1, PAL.amber);
+  px(ctx, 66, 14, 3, 3, PAL.ink);
+  px(ctx, 67, 15, 1, 1, PAL.amber);
+  px(ctx, 59, 17, 10, 7, PAL.ink);
+  px(ctx, 60, 18, 8, 5, PAL.amber);
+  px(ctx, 60, 18, 8, 1, PAL.lemon);
+  px(ctx, 61, 19, 1, 1, PAL.ink);
+  px(ctx, 66, 19, 1, 1, PAL.ink);
+  px(ctx, 62, 21, 4, 2, PAL.cream);
+  px(ctx, 63, 21, 1, 1, PAL.ink);
+  px(ctx, 58, 24, 12, 5, PAL.ink);
+  px(ctx, 59, 25, 10, 3, PAL.amber);
+  px(ctx, 59, 27, 10, 1, "rgba(190,74,47,0.25)");
 
-  // 床尾板
-  px(ctx, 0, 45, 64, 8, PAL.ink);
-  px(ctx, 1, 46, 62, 6, PAL.woodLight);
-  px(ctx, 1, 46, 62, 1, PAL.sand);
+  // 床尾板（右端，矮）
+  px(ctx, 74, 15, 10, 29, PAL.ink);
+  px(ctx, 75, 16, 8, 26, PAL.wood);
+  px(ctx, 75, 16, 8, 2, PAL.woodLight);
+  px(ctx, 76, 21, 6, 1, "rgba(24,20,37,0.28)");
+  px(ctx, 76, 27, 6, 1, "rgba(24,20,37,0.28)");
+  px(ctx, 82, 18, 1, 24, "rgba(24,20,37,0.25)");
 }
 
 function drawDesk(ctx: Ctx) {
@@ -333,24 +466,42 @@ function drawSofa(ctx: Ctx) {
   px(ctx, 66, 14, 10, 6, PAL.cyan);
 }
 
-function drawTable(ctx: Ctx) {
-  px(ctx, 4, 24, 42, 3, "rgba(24,20,37,0.25)");
-  px(ctx, 2, 4, 44, 12, PAL.ink);
-  px(ctx, 3, 5, 42, 9, PAL.sand);
-  px(ctx, 3, 5, 42, 1, PAL.cream);
-  px(ctx, 3, 14, 42, 2, PAL.wood);
-  px(ctx, 6, 17, 5, 11, PAL.ink);
-  px(ctx, 7, 17, 3, 10, PAL.grape);
-  px(ctx, 37, 17, 5, 11, PAL.ink);
-  px(ctx, 38, 17, 3, 10, PAL.grape);
-  px(ctx, 10, 2, 6, 6, PAL.ink);
-  px(ctx, 11, 3, 4, 4, PAL.cherry);
-  px(ctx, 11, 3, 4, 1, PAL.coral);
-  px(ctx, 16, 4, 2, 2, PAL.cherry);
-  px(ctx, 28, 3, 10, 5, PAL.ink);
-  px(ctx, 29, 4, 8, 3, PAL.grass);
-  px(ctx, 29, 4, 8, 1, PAL.lime);
-  px(ctx, 34, 6, 3, 1, PAL.cream);
+function drawShelf(ctx: Ctx) {
+  px(ctx, 3, 40, 22, 4, "rgba(24,20,37,0.25)");
+  px(ctx, 0, 0, 28, 44, PAL.ink);
+  px(ctx, 1, 1, 26, 42, PAL.wood);
+  px(ctx, 1, 1, 26, 1, PAL.woodLight);
+  px(ctx, 2, 2, 24, 2, PAL.clay);
+
+  const shelfRows = [13, 26, 38];
+  for (const shelfY of shelfRows) {
+    px(ctx, 2, shelfY, 24, 2, PAL.ink);
+    px(ctx, 2, shelfY, 24, 1, PAL.woodLight);
+  }
+
+  const books = [
+    { x: 4, y: 5, w: 3, h: 8, color: PAL.cherry },
+    { x: 8, y: 4, w: 2, h: 9, color: PAL.blue },
+    { x: 11, y: 6, w: 4, h: 7, color: PAL.grass },
+    { x: 16, y: 4, w: 2, h: 9, color: PAL.amber },
+    { x: 19, y: 7, w: 3, h: 6, color: PAL.plum },
+    { x: 6, y: 16, w: 2, h: 10, color: PAL.cyan },
+    { x: 9, y: 18, w: 4, h: 8, color: PAL.clay },
+    { x: 14, y: 16, w: 3, h: 10, color: PAL.lemon },
+    { x: 18, y: 19, w: 2, h: 7, color: PAL.coral },
+    { x: 21, y: 17, w: 3, h: 9, color: PAL.navy },
+    { x: 4, y: 29, w: 4, h: 9, color: PAL.steel },
+    { x: 9, y: 30, w: 2, h: 8, color: PAL.rust },
+    { x: 12, y: 28, w: 3, h: 10, color: PAL.teal },
+    { x: 16, y: 31, w: 4, h: 7, color: PAL.sand },
+  ];
+  for (const book of books) {
+    const inset = book.w >= 3 ? 1 : 0;
+    px(ctx, book.x, book.y, book.w, book.h, PAL.ink);
+    px(ctx, book.x + inset, book.y + 1, book.w - inset * 2, book.h - 2, book.color);
+    px(ctx, book.x + inset, book.y + 1, 1, book.h - 2, "rgba(255,255,255,0.20)");
+  }
+
 }
 
 function drawPlant(ctx: Ctx) {
@@ -412,7 +563,7 @@ export function createPropCanvas(spec: PropSpec): HTMLCanvasElement {
   if (spec.kind === "desk") drawDesk(ctx);
   if (spec.kind === "chair") drawChair(ctx);
   if (spec.kind === "sofa") drawSofa(ctx);
-  if (spec.kind === "table") drawTable(ctx);
+  if (spec.kind === "shelf") drawShelf(ctx);
   if (spec.kind === "plant") drawPlant(ctx);
   if (spec.kind === "tank") drawTank(ctx);
   return canvas;

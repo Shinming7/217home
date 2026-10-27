@@ -1,26 +1,15 @@
-import { useEffect, useRef } from "react";
-import { getCharacterPortrait } from "../../game/character";
+import { useEffect } from "react";
+import { PixelPortrait } from "../../ui/PixelPortrait";
 import type { NpcSpec } from "../../game/types";
 
 type ProfileCardProps = {
   spec: NpcSpec;
   onClose: () => void;
   onChat: () => void;
+  onFight: () => void;
 };
 
-export function ProfileCard({ spec, onClose, onChat }: ProfileCardProps) {
-  const avatarRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = avatarRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.imageSmoothingEnabled = false;
-    ctx.clearRect(0, 0, 64, 64);
-    ctx.drawImage(getCharacterPortrait(spec.look), 0, 0);
-  }, [spec]);
-
+export function ProfileCard({ spec, onClose, onChat, onFight }: ProfileCardProps) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -45,7 +34,7 @@ export function ProfileCard({ spec, onClose, onChat }: ProfileCardProps) {
         </header>
         <div className="profile-id">
           <div className="avatar-frame">
-            <canvas ref={avatarRef} width={64} height={64} aria-label={`${spec.name}的像素头像`} />
+            <PixelPortrait look={spec.look} label={`${spec.name}的像素头像`} />
           </div>
           <div>
             <h2>{spec.name}</h2>
@@ -69,8 +58,8 @@ export function ProfileCard({ spec, onClose, onChat }: ProfileCardProps) {
           <button className="pixel-btn primary" onClick={onChat}>
             聊两句
           </button>
-          <button className="pixel-btn" disabled>
-            猜拳 · 即将开放
+          <button className="pixel-btn" onClick={onFight}>
+            约战八角笼
           </button>
         </div>
       </section>

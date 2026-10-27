@@ -6,17 +6,23 @@ type RoomCanvasProps = {
   phase: Phase;
   onSelectNpc: (id: string) => void;
   onEngine?: (engine: RoomEngine | null) => void;
+  onEnterCage?: () => void;
+  paused?: boolean;
 };
 
-export function RoomCanvas({ phase, onSelectNpc, onEngine }: RoomCanvasProps) {
+export function RoomCanvas({ phase, onSelectNpc, onEngine, onEnterCage, paused = false }: RoomCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<RoomEngine | null>(null);
   const selectRef = useRef(onSelectNpc);
   const engineCbRef = useRef(onEngine);
+  const cageRef = useRef(onEnterCage);
+  const pausedRef = useRef(paused);
 
   useEffect(() => {
     selectRef.current = onSelectNpc;
     engineCbRef.current = onEngine;
+    cageRef.current = onEnterCage;
+    pausedRef.current = paused;
   });
 
   useEffect(() => {
@@ -24,7 +30,9 @@ export function RoomCanvas({ phase, onSelectNpc, onEngine }: RoomCanvasProps) {
     if (!canvas) return;
     const engine = new RoomEngine(canvas, {
       onSelectNpc: (id) => selectRef.current(id),
+      onEnterCage: () => cageRef.current?.(),
     });
+    engine.setPaused(pausedRef.current);
     engineRef.current = engine;
     engine.start();
     engineCbRef.current?.(engine);
@@ -52,12 +60,16 @@ export function RoomCanvas({ phase, onSelectNpc, onEngine }: RoomCanvasProps) {
     engineRef.current?.setPhase(phase);
   }, [phase]);
 
+  useEffect(() => {
+    engineRef.current?.setPaused(paused);
+  }, [paused]);
+
   return (
     <canvas
       ref={canvasRef}
       width={384}
       height={256}
-      aria-label="217之家像素小屋。使用方向键或 WASD 走动，点击小人查看档案。"
+      aria-label="217之家像素小屋。使用方向键或 WASD 走动，点击小人查看档案，点击房间中央的八角笼进入对打。"
     />
   );
 }

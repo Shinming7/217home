@@ -5,16 +5,36 @@ import type { CharacterLook, Dir, WalkFrame } from "./types";
 const spriteCache = new Map<string, HTMLCanvasElement>();
 const portraitCache = new Map<string, HTMLCanvasElement>();
 
+function mixHex(a: string, b: string, t: number): string {
+  const pa = a.replace("#", "");
+  const pb = b.replace("#", "");
+  const channels = [0, 2, 4].map((offset) => {
+    const ca = parseInt(pa.slice(offset, offset + 2), 16);
+    const cb = parseInt(pb.slice(offset, offset + 2), 16);
+    return Math.round(ca + (cb - ca) * t)
+      .toString(16)
+      .padStart(2, "0");
+  });
+  return `#${channels.join("")}`;
+}
+
 function colorMap(look: CharacterLook): Record<string, string> {
   return {
     o: look.outline,
     h: look.hair,
-    s: look.skin,
-    e: look.outline,
-    c: look.shirt,
-    p: look.pants,
-    b: look.shoes,
+    H: mixHex(look.hair, "#ffffff", 0.28),
     a: look.accent,
+    s: look.skin,
+    S: look.skinDark,
+    r: mixHex(look.skin, PAL.coral, 0.38),
+    e: look.outline,
+    w: "#ffffff",
+    m: mixHex(look.skin, look.outline, 0.55),
+    c: look.shirt,
+    C: look.shirtDark,
+    p: look.pants,
+    P: look.pantsDark,
+    b: look.shoes,
   };
 }
 

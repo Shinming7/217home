@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { RoomCanvas } from "./features/room/RoomCanvas";
 import { ProfileCard } from "./features/profile/ProfileCard";
+import { FightModal } from "./features/games/FightModal";
 import { NPC_SPECS } from "./game/roomData";
 import type { RoomEngine } from "./game/engine";
 import type { Phase } from "./game/types";
@@ -12,6 +13,8 @@ export default function App() {
   const [phase, setPhase] = useState<Phase>("dusk");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [engine, setEngine] = useState<RoomEngine | null>(null);
+  const [fightOpen, setFightOpen] = useState(false);
+  const [fightFoeId, setFightFoeId] = useState<string | null>(null);
 
   const selected = selectedId ? (NPC_SPECS.find((npc) => npc.id === selectedId) ?? null) : null;
 
@@ -23,6 +26,23 @@ export default function App() {
     engine?.say(selectedId);
     setSelectedId(null);
   }, [engine, selectedId]);
+
+  const handleEnterCage = useCallback(() => {
+    setFightFoeId(null);
+    setFightOpen(true);
+  }, []);
+
+  const handleFightClose = useCallback(() => {
+    setFightOpen(false);
+    setFightFoeId(null);
+  }, []);
+
+  const handleProfileFight = useCallback(() => {
+    if (!selectedId) return;
+    setFightFoeId(selectedId);
+    setFightOpen(true);
+    setSelectedId(null);
+  }, [selectedId]);
 
   const cyclePhase = () => {
     setPhase((current) => PHASE_ORDER[(PHASE_ORDER.indexOf(current) + 1) % PHASE_ORDER.length]);
@@ -52,18 +72,27 @@ export default function App() {
 
       <main className="stage">
         <div className="room-frame">
-          <RoomCanvas phase={phase} onSelectNpc={handleSelect} onEngine={handleEngine} />
+          <RoomCanvas
+            phase={phase}
+            onSelectNpc={handleSelect}
+            onEngine={handleEngine}
+            onEnterCage={handleEnterCage}
+            paused={Boolean(selected) || fightOpen}
+          />
         </div>
       </main>
 
       <footer className="hintbar">
         <p>
-          <span className="key">WASD</span> / <span className="key">方向键</span> 移动 · 点击小人打开档案
+          <span className="key">WASD</span> / <span className="key">方向键</span> 移动 · 点击小人打开档案 · 点击中间八角笼开打
         </p>
-        <p className="fineprint">M0 风格样张 · 后续加入照片像素化、照片墙、留言板与小游戏</p>
+        <p className="fineprint">M0.5 风格样张 · 新小人、家具与八角笼对打 · 后续加入照片像素化、照片墙与留言板</p>
       </footer>
 
-      {selected ? <ProfileCard spec={selected} onClose={handleClose} onChat={handleChat} /> : null}
+      {selected ? (
+        <ProfileCard spec={selected} onClose={handleClose} onChat={handleChat} onFight={handleProfileFight} />
+      ) : null}
+      {fightOpen ? <FightModal initialFoeId={fightFoeId} onClose={handleFightClose} /> : null}
     </div>
   );
 }

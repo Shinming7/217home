@@ -6,7 +6,7 @@ export const ROOM = { width: 384, height: 256, tile: 16 } as const;
 export const BOUNDS = { minX: 9, maxX: 375, minY: 78, maxY: 250 } as const;
 
 export const WINDOW = { x: 152, y: 10, w: 80, h: 46 } as const;
-export const RUG = { x: 128, y: 140, w: 120, h: 76 } as const;
+export const OCTAGON = { x: 142, y: 134, w: 112, h: 80 } as const;
 export const PENDANT = { x: 260, y: 0, shadeY: 18, glowX: 270, glowY: 30 } as const;
 export const CORKBOARD = { x: 288, y: 12, w: 64, h: 42 } as const;
 export const PHOTO_FRAMES = [
@@ -15,31 +15,31 @@ export const PHOTO_FRAMES = [
   { x: 108, y: 12, w: 24, h: 20, variant: "moon" as const },
 ];
 
-export type PropKind = "bed" | "desk" | "chair" | "sofa" | "table" | "plant" | "tank";
+export type PropKind = "bed" | "desk" | "chair" | "sofa" | "shelf" | "plant" | "tank";
 export type PropSpec = { id: string; kind: PropKind; x: number; y: number; w: number; h: number };
 
 export const PROPS: PropSpec[] = [
-  { id: "bed", kind: "bed", x: 16, y: 70, w: 64, h: 56 },
+  { id: "bed", kind: "bed", x: 8, y: 76, w: 84, h: 46 },
   { id: "desk", kind: "desk", x: 280, y: 58, w: 64, h: 66 },
   { id: "chair", kind: "chair", x: 304, y: 124, w: 22, h: 20 },
+  { id: "shelf", kind: "shelf", x: 100, y: 82, w: 28, h: 44 },
   { id: "sofa", kind: "sofa", x: 32, y: 180, w: 88, h: 40 },
-  { id: "table", kind: "table", x: 168, y: 156, w: 48, h: 28 },
   { id: "plant", kind: "plant", x: 126, y: 206, w: 26, h: 38 },
   { id: "tank", kind: "tank", x: 326, y: 184, w: 50, h: 46 },
 ];
 
 export const SOLIDS: Rect[] = [
   { x: 0, y: 0, w: ROOM.width, h: 74 },
-  { x: 16, y: 70, w: 64, h: 56 },
+  { x: 8, y: 76, w: 84, h: 46 },
   { x: 280, y: 84, w: 64, h: 38 },
   { x: 304, y: 124, w: 22, h: 20 },
+  { x: 100, y: 82, w: 28, h: 44 },
   { x: 32, y: 180, w: 88, h: 40 },
-  { x: 168, y: 156, w: 48, h: 28 },
   { x: 126, y: 206, w: 26, h: 38 },
   { x: 326, y: 184, w: 50, h: 46 },
 ];
 
-export const PLAYER_START = { x: 196, y: 214 };
+export const PLAYER_START = { x: 196, y: 228 };
 
 export const PLAYER_LOOK: CharacterLook = {
   hair: PAL.navy,

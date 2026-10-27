@@ -5,6 +5,7 @@ import {
   BOUNDS,
   DIALOGUE_LINES,
   NPC_SPECS,
+  OCTAGON,
   PLAYER_LOOK,
   PLAYER_START,
   PROPS,
@@ -32,7 +33,7 @@ type Renderable = { depth: number; draw: () => void };
 
 type Bubble = { npcId: string; text: string; until: number };
 
-export type RoomEngineOptions = { onSelectNpc?: (id: string) => void };
+export type RoomEngineOptions = { onSelectNpc?: (id: string) => void; onEnterCage?: () => void };
 
 const COLS = ROOM.width / ROOM.tile;
 const ROWS = ROOM.height / ROOM.tile;
@@ -79,8 +80,10 @@ export class RoomEngine {
     moving: false,
   }));
   private phase: Phase = "dusk";
+  private paused = false;
   private bubble: Bubble | null = null;
   private hoverNpcId: string | null = null;
+  private hoverCage = false;
   private raf = 0;
   private last = 0;
   private destroyed = false;
@@ -126,6 +129,16 @@ export class RoomEngine {
 
   setPhase(phase: Phase) {
     this.phase = phase;
+  }
+
+  setPaused(paused: boolean) {
+    this.paused = paused;
+    if (paused) {
+      this.keys.clear();
+      this.player.moving = false;
+      this.player.frame = "idle";
+      this.player.walkClock = 0;
+    }
   }
 
   say(npcId: string, text?: string) {
@@ -235,7 +248,7 @@ export class RoomEngine {
 
   private update(dt: number) {
     const keys = this.keys;
-    if (!isTypingTarget(document.activeElement)) {
+    if (!this.paused && !isTypingTarget(document.activeElement)) {
       const right = keys.has("arrowright") || keys.has("d") ? 1 : 0;
       const left = keys.has("arrowleft") || keys.has("a") ? 1 : 0;
       const down = keys.has("arrowdown") || keys.has("s") ? 1 : 0;
@@ -365,7 +378,8 @@ export class RoomEngine {
     ctx.fillStyle = "rgba(24,20,37,0.28)";
     ctx.fillRect(rx - 5, ry - 2, 10, 4);
     const sprite = getCharacterSprite(look, dir, frame);
-    ctx.drawImage(sprite, rx - 8, ry - 24);
+    const bob = frame === "a" ? 1 : 0;
+    ctx.drawImage(sprite, rx - 8, ry - 24 - bob);
   }
 
   private drawLighting(ctx: CanvasRenderingContext2D) {
@@ -433,6 +447,19 @@ export class RoomEngine {
       const crowded = Math.abs(npc.x - this.player.x) < 26 && Math.abs(npc.y - this.player.y) < 30;
       label(npc.spec.name, npc.x, npc.y - (crowded ? 40 : 27), PAL.cream);
     }
+    if (this.hoverCage) {
+      const cx = OCTAGON.x + OCTAGON.w / 2;
+      const text = "点击进入八角笼";
+      const width = Math.ceil(ctx.measureText(text).width) + 12;
+      const x = Math.round(cx - width / 2);
+      const y = OCTAGON.y - 36;
+      ctx.fillStyle = PAL.ink;
+      this.blockRect(ctx, x - 1, y - 1, width + 2, 16);
+      ctx.fillStyle = PAL.cream;
+      this.blockRect(ctx, x + 1, y + 1, width - 2, 12);
+      ctx.fillStyle = PAL.ink;
+      ctx.fillText(text, cx, y + 11);
+    }
     ctx.restore();
   }
 
@@ -493,6 +520,14 @@ export class RoomEngine {
     return null;
   }
 
+  private cageAt(x: number, y: number): boolean {
+    const cx = OCTAGON.x + OCTAGON.w / 2;
+    const cy = OCTAGON.y + OCTAGON.h / 2;
+    const nx = (x - cx) / (OCTAGON.w / 2);
+    const ny = (y - cy) / (OCTAGON.h / 2);
+    return nx * nx + ny * ny <= 0.92;
+  }
+
   private onKeyDown = (event: KeyboardEvent) => {
     if (isTypingTarget(event.target)) return;
     const key = event.key.toLowerCase();
@@ -517,11 +552,13 @@ export class RoomEngine {
     const y = ((event.clientY - rect.top) / rect.height) * ROOM.height;
     const npc = this.hitNpc(x, y);
     this.hoverNpcId = npc ? npc.spec.id : null;
-    this.canvas.style.cursor = npc ? "pointer" : "default";
+    this.hoverCage = !npc && this.cageAt(x, y);
+    this.canvas.style.cursor = npc || this.hoverCage ? "pointer" : "default";
   };
 
   private onMouseLeave = () => {
     this.hoverNpcId = null;
+    this.hoverCage = false;
     this.canvas.style.cursor = "default";
   };
 
@@ -530,8 +567,11 @@ export class RoomEngine {
     const x = ((event.clientX - rect.left) / rect.width) * ROOM.width;
     const y = ((event.clientY - rect.top) / rect.height) * ROOM.height;
     const npc = this.hitNpc(x, y);
-    if (!npc) return;
-    this.say(npc.spec.id);
-    this.opts.onSelectNpc?.(npc.spec.id);
+    if (npc) {
+      this.say(npc.spec.id);
+      this.opts.onSelectNpc?.(npc.spec.id);
+      return;
+    }
+    if (this.cageAt(x, y)) this.opts.onEnterCage?.();
   };
 }
