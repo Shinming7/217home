@@ -571,7 +571,16 @@ export function createPropCanvas(spec: PropSpec): HTMLCanvasElement {
 
 function drawSky(ctx: Ctx, phase: Phase, time: number, ix: number, iy: number, iw: number, ih: number) {
   const band = Math.ceil(ih / 3);
-  if (phase === "day") {
+  if (phase === "morning") {
+    px(ctx, ix, iy, iw, band, PAL.plum);
+    px(ctx, ix, iy + band, iw, band, PAL.peach);
+    px(ctx, ix, iy + band * 2, iw, ih - band * 2, PAL.lemon);
+    px(ctx, ix + 40, iy + 14, 10, 10, PAL.cream);
+    px(ctx, ix + 38, iy + 16, 14, 6, PAL.cream);
+    const drift = Math.floor((time * 2) % 30);
+    px(ctx, ix + 6 + drift, iy + 8, 12, 2, PAL.white);
+    px(ctx, ix + 28 - drift, iy + 20, 9, 2, PAL.white);
+  } else if (phase === "day") {
     px(ctx, ix, iy, iw, band, PAL.blue);
     px(ctx, ix, iy + band, iw, band, PAL.cyan);
     px(ctx, ix, iy + band * 2, iw, ih - band * 2, PAL.silver);

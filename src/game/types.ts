@@ -2,7 +2,9 @@ export type Dir = "down" | "up" | "left" | "right";
 
 export type WalkFrame = "idle" | "a" | "b";
 
-export type Phase = "day" | "dusk" | "night";
+export type Phase = "morning" | "day" | "dusk" | "night";
+
+export type WeatherKind = "clear" | "cloudy" | "rain" | "snow" | "storm" | "fog";
 
 export type CharacterLook = {
   hair: string;
@@ -34,4 +36,14 @@ export type NpcSpec = {
   x: number;
   y: number;
   profile: Profile;
+};
+
+export type PeerInput = {
+  id: string;
+  nickname: string;
+  look: CharacterLook | null;
+  online: boolean;
+  x: number;
+  y: number;
+  dir: Dir;
 };

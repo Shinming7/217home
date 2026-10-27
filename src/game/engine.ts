@@ -1,39 +1,43 @@
 import { getCharacterSprite } from "./character";
+import { fallbackLook } from "./looks";
 import { PAL } from "./palette";
 import { createPropCanvas, createRoomCanvas, drawWindow } from "./roomArt";
-import {
-  BOUNDS,
-  DIALOGUE_LINES,
-  NPC_SPECS,
-  OCTAGON,
-  PLAYER_LOOK,
-  PLAYER_START,
-  PROPS,
-  ROOM,
-  SOLIDS,
-  WINDOW,
-} from "./roomData";
-import type { CharacterLook, Dir, NpcSpec, Phase, Rect, WalkFrame } from "./types";
+import { BOUNDS, OCTAGON, PLAYER_LOOK, PLAYER_START, PROPS, ROOM, SOLIDS, WINDOW } from "./roomData";
+import type { CharacterLook, Dir, PeerInput, Phase, Rect, WalkFrame, WeatherKind } from "./types";
 
 type Point = { x: number; y: number };
 
-type Npc = {
-  spec: NpcSpec;
+type Peer = {
+  id: string;
+  nickname: string;
+  look: CharacterLook;
   x: number;
   y: number;
   dir: Dir;
   frame: WalkFrame;
+  target: Point;
   path: Point[];
   wait: number;
   walkClock: number;
   moving: boolean;
+  online: boolean;
 };
 
 type Renderable = { depth: number; draw: () => void };
 
-type Bubble = { npcId: string; text: string; until: number };
+type Bubble = { id: string; text: string; until: number };
 
-export type RoomEngineOptions = { onSelectNpc?: (id: string) => void; onEnterCage?: () => void };
+type Drop = { x: number; y: number; len: number; speed: number };
+type Flake = { x: number; y: number; size: number; speed: number; phase: number };
+
+export type RoomEngineOptions = {
+  selfLook?: CharacterLook;
+  start?: Point;
+  phase?: Phase;
+  weather?: WeatherKind;
+  onSelectMember?: (id: string) => void;
+  onEnterCage?: () => void;
+};
 
 const COLS = ROOM.width / ROOM.tile;
 const ROWS = ROOM.height / ROOM.tile;
@@ -49,6 +53,12 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
 }
 
+function dirOf(dx: number, dy: number, fallback: Dir): Dir {
+  if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) return fallback;
+  if (Math.abs(dx) > Math.abs(dy)) return dx < 0 ? "left" : "right";
+  return dy < 0 ? "up" : "down";
+}
+
 export class RoomEngine {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -60,6 +70,8 @@ export class RoomEngine {
   private blocked: boolean[] = [];
   private walkable: Point[] = [];
   private keys = new Set<string>();
+  private joystick = { x: 0, y: 0 };
+  private selfLook: CharacterLook;
   private player = {
     x: PLAYER_START.x,
     y: PLAYER_START.y,
@@ -68,29 +80,29 @@ export class RoomEngine {
     walkClock: 0,
     moving: false,
   };
-  private npcs: Npc[] = NPC_SPECS.map((spec) => ({
-    spec,
-    x: spec.x,
-    y: spec.y,
-    dir: "down" as Dir,
-    frame: "idle" as WalkFrame,
-    path: [],
-    wait: 0.4 + Math.random() * 1.6,
-    walkClock: 0,
-    moving: false,
-  }));
+  private peers = new Map<string, Peer>();
   private phase: Phase = "dusk";
+  private weather: WeatherKind = "clear";
   private paused = false;
   private bubble: Bubble | null = null;
-  private hoverNpcId: string | null = null;
+  private hoverPeerId: string | null = null;
   private hoverCage = false;
   private raf = 0;
   private last = 0;
   private destroyed = false;
+  private drops: Drop[] = [];
+  private flakes: Flake[] = [];
 
   constructor(canvas: HTMLCanvasElement, opts: RoomEngineOptions = {}) {
     this.canvas = canvas;
     this.opts = opts;
+    this.selfLook = opts.selfLook ?? PLAYER_LOOK;
+    if (opts.start) {
+      this.player.x = opts.start.x;
+      this.player.y = opts.start.y;
+    }
+    if (opts.phase) this.phase = opts.phase;
+    if (opts.weather) this.weather = opts.weather;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("canvas 2d context unavailable");
     this.ctx = ctx;
@@ -103,6 +115,7 @@ export class RoomEngine {
     this.lightCanvas.height = ROOM.height;
     this.lightCtx = this.lightCanvas.getContext("2d")!;
     this.buildGrid();
+    this.buildParticles();
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
     window.addEventListener("blur", this.onBlur);
@@ -127,24 +140,102 @@ export class RoomEngine {
     this.canvas.removeEventListener("mouseleave", this.onMouseLeave);
   }
 
+  setSelfLook(look: CharacterLook) {
+    this.selfLook = look;
+  }
+
   setPhase(phase: Phase) {
     this.phase = phase;
+  }
+
+  setWeather(weather: WeatherKind) {
+    this.weather = weather;
   }
 
   setPaused(paused: boolean) {
     this.paused = paused;
     if (paused) {
       this.keys.clear();
+      this.joystick = { x: 0, y: 0 };
       this.player.moving = false;
       this.player.frame = "idle";
       this.player.walkClock = 0;
     }
   }
 
-  say(npcId: string, text?: string) {
-    const lines = DIALOGUE_LINES[npcId] ?? ["……"];
-    const line = text ?? lines[Math.floor(Math.random() * lines.length)];
-    this.bubble = { npcId, text: line, until: performance.now() + 5200 };
+  setJoystick(x: number, y: number) {
+    this.joystick = { x, y };
+  }
+
+  setPeers(peers: PeerInput[]) {
+    const seen = new Set<string>();
+    for (const input of peers) {
+      seen.add(input.id);
+      const existing = this.peers.get(input.id);
+      if (!existing) {
+        this.peers.set(input.id, {
+          id: input.id,
+          nickname: input.nickname,
+          look: input.look ?? fallbackLook(input.id),
+          x: input.x,
+          y: input.y,
+          dir: input.dir,
+          frame: "idle",
+          target: { x: input.x, y: input.y },
+          path: [],
+          wait: 0.4 + Math.random() * 1.4,
+          walkClock: 0,
+          moving: false,
+          online: input.online,
+        });
+        continue;
+      }
+      const wasOnline = existing.online;
+      existing.nickname = input.nickname;
+      existing.look = input.look ?? fallbackLook(input.id);
+      existing.online = input.online;
+      if (input.online) {
+        existing.target = { x: input.x, y: input.y };
+        if (!wasOnline) {
+          existing.x = input.x;
+          existing.y = input.y;
+          existing.path = [];
+        }
+      } else if (wasOnline) {
+        existing.target = { x: existing.x, y: existing.y };
+        existing.path = [];
+        existing.wait = 0.8 + Math.random() * 1.6;
+      }
+    }
+    for (const id of [...this.peers.keys()]) {
+      if (!seen.has(id)) this.peers.delete(id);
+    }
+  }
+
+  getPlayer(): { x: number; y: number; dir: Dir } {
+    return { x: Math.round(this.player.x), y: Math.round(this.player.y), dir: this.player.dir };
+  }
+
+  say(id: string, text: string) {
+    this.bubble = { id, text, until: performance.now() + 5600 };
+  }
+
+  private buildParticles() {
+    const innerW = WINDOW.w - 12;
+    const innerH = WINDOW.h - 12;
+    this.drops = Array.from({ length: 60 }, () => ({
+      x: Math.random() * innerW,
+      y: Math.random() * innerH,
+      len: 3 + Math.random() * 5,
+      speed: 26 + Math.random() * 44,
+    }));
+    this.flakes = Array.from({ length: 40 }, () => ({
+      x: Math.random() * innerW,
+      y: Math.random() * innerH,
+      size: Math.random() < 0.4 ? 2 : 1,
+      speed: 5 + Math.random() * 9,
+      phase: Math.random() * Math.PI * 2,
+    }));
   }
 
   private tick = (now: number) => {
@@ -225,19 +316,19 @@ export class RoomEngine {
     }));
   }
 
-  private pickTarget(npc: Npc) {
+  private pickTarget(peer: Peer) {
     for (let attempt = 0; attempt < 24; attempt += 1) {
       const cell = this.walkable[Math.floor(Math.random() * this.walkable.length)];
       if (!cell) break;
-      const dist = Math.hypot(cell.x - npc.x, cell.y - npc.y);
+      const dist = Math.hypot(cell.x - peer.x, cell.y - peer.y);
       if (dist < 44) continue;
-      const path = this.findPath({ x: npc.x, y: npc.y }, cell);
+      const path = this.findPath({ x: peer.x, y: peer.y }, cell);
       if (path.length) {
-        npc.path = path;
+        peer.path = path;
         return;
       }
     }
-    npc.wait = 1.2 + Math.random() * 2;
+    peer.wait = 1.2 + Math.random() * 2;
   }
 
   private collides(x: number, y: number): boolean {
@@ -253,16 +344,17 @@ export class RoomEngine {
       const left = keys.has("arrowleft") || keys.has("a") ? 1 : 0;
       const down = keys.has("arrowdown") || keys.has("s") ? 1 : 0;
       const up = keys.has("arrowup") || keys.has("w") ? 1 : 0;
-      let dx = right - left;
-      let dy = down - up;
-      if (dx !== 0 && dy !== 0) {
-        dx *= Math.SQRT1_2;
-        dy *= Math.SQRT1_2;
+      let dx = right - left + this.joystick.x;
+      let dy = down - up + this.joystick.y;
+      const magnitude = Math.hypot(dx, dy);
+      if (magnitude > 1) {
+        dx /= magnitude;
+        dy /= magnitude;
       }
-      const moving = dx !== 0 || dy !== 0;
+      const moving = Math.abs(dx) > 0.08 || Math.abs(dy) > 0.08;
       this.player.moving = moving;
       if (moving) {
-        this.player.dir = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down");
+        this.player.dir = dirOf(dx, dy, this.player.dir);
         const speed = 74;
         const nx = this.player.x + dx * speed * dt;
         if (!this.collides(nx, this.player.y)) this.player.x = nx;
@@ -276,39 +368,66 @@ export class RoomEngine {
       }
     }
 
-    for (const npc of this.npcs) {
-      if (npc.wait > 0) {
-        npc.wait -= dt;
-        npc.moving = false;
-        npc.frame = "idle";
-        if (npc.wait <= 0 && npc.path.length === 0) this.pickTarget(npc);
+    for (const peer of this.peers.values()) {
+      if (peer.online) {
+        const dx = peer.target.x - peer.x;
+        const dy = peer.target.y - peer.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > 160) {
+          peer.x = peer.target.x;
+          peer.y = peer.target.y;
+          peer.frame = "idle";
+          peer.moving = false;
+          continue;
+        }
+        if (dist > 1.5) {
+          const step = Math.min(dist, Math.max(46, dist * 3.2) * dt);
+          peer.x += (dx / dist) * step;
+          peer.y += (dy / dist) * step;
+          peer.dir = dirOf(dx, dy, peer.dir);
+          peer.walkClock += dt;
+          peer.frame = Math.floor(peer.walkClock / 0.18) % 2 === 0 ? "a" : "b";
+          peer.moving = true;
+        } else {
+          peer.x = peer.target.x;
+          peer.y = peer.target.y;
+          peer.moving = false;
+          peer.frame = "idle";
+        }
         continue;
       }
-      const target = npc.path[0];
+
+      if (peer.wait > 0) {
+        peer.wait -= dt;
+        peer.moving = false;
+        peer.frame = "idle";
+        if (peer.wait <= 0 && peer.path.length === 0) this.pickTarget(peer);
+        continue;
+      }
+      const target = peer.path[0];
       if (!target) {
-        npc.moving = false;
-        npc.frame = "idle";
-        if (npc.wait <= 0) npc.wait = 0.8 + Math.random() * 2.6;
-        if (!npc.path.length && npc.wait <= 0) this.pickTarget(npc);
+        peer.moving = false;
+        peer.frame = "idle";
+        peer.wait = 0.8 + Math.random() * 2.6;
         continue;
       }
-      const dx = target.x - npc.x;
-      const dy = target.y - npc.y;
+      const dx = target.x - peer.x;
+      const dy = target.y - peer.y;
       const dist = Math.hypot(dx, dy);
       if (dist < 1.2) {
-        npc.path.shift();
-        if (npc.path.length === 0) npc.wait = 1.4 + Math.random() * 2.8;
-        npc.frame = "idle";
-        npc.moving = false;
+        peer.path.shift();
+        if (peer.path.length === 0) peer.wait = 1.4 + Math.random() * 2.8;
+        peer.frame = "idle";
+        peer.moving = false;
         continue;
       }
       const step = Math.min(dist, 32 * dt);
-      npc.x += (dx / dist) * step;
-      npc.y += (dy / dist) * step;
-      npc.dir = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down");
-      npc.walkClock += dt;
-      npc.frame = Math.floor(npc.walkClock / 0.2) % 2 === 0 ? "a" : "b";
-      npc.moving = true;
+      peer.x += (dx / dist) * step;
+      peer.y += (dy / dist) * step;
+      peer.dir = dirOf(dx, dy, peer.dir);
+      peer.walkClock += dt;
+      peer.frame = Math.floor(peer.walkClock / 0.2) % 2 === 0 ? "a" : "b";
+      peer.moving = true;
     }
 
     if (this.bubble && performance.now() > this.bubble.until) this.bubble = null;
@@ -320,26 +439,24 @@ export class RoomEngine {
     ctx.clearRect(0, 0, ROOM.width, ROOM.height);
     ctx.drawImage(this.roomCanvas, 0, 0);
     drawWindow(ctx, this.phase, now / 1000);
+    this.drawWeather(ctx, now / 1000);
     this.drawWindowBeam(ctx);
 
     const items: Renderable[] = [];
     for (const prop of PROPS) {
       const art = this.propCanvases.get(prop.id);
       if (!art) continue;
-      items.push({
-        depth: prop.y + prop.h,
-        draw: () => ctx.drawImage(art, prop.x, prop.y),
-      });
+      items.push({ depth: prop.y + prop.h, draw: () => ctx.drawImage(art, prop.x, prop.y) });
     }
     items.push({
       depth: this.player.y,
       draw: () =>
-        this.drawCharacter(ctx, this.player.x, this.player.y, PLAYER_LOOK, this.player.dir, this.player.frame),
+        this.drawCharacter(ctx, this.player.x, this.player.y, this.selfLook, this.player.dir, this.player.frame),
     });
-    for (const npc of this.npcs) {
+    for (const peer of this.peers.values()) {
       items.push({
-        depth: npc.y,
-        draw: () => this.drawCharacter(ctx, npc.x, npc.y, npc.spec.look, npc.dir, npc.frame),
+        depth: peer.y,
+        draw: () => this.drawCharacter(ctx, peer.x, peer.y, peer.look, peer.dir, peer.frame),
       });
     }
     items.sort((a, b) => a.depth - b.depth);
@@ -351,9 +468,54 @@ export class RoomEngine {
     this.drawBubble(ctx);
   }
 
+  private drawWeather(ctx: CanvasRenderingContext2D, time: number) {
+    const inner = { x: WINDOW.x + 5, y: WINDOW.y + 5, w: WINDOW.w - 10, h: WINDOW.h - 10 };
+    if (this.weather === "cloudy" || this.weather === "fog") {
+      ctx.save();
+      ctx.globalAlpha = this.weather === "fog" ? 0.24 : 0.12;
+      ctx.fillStyle = PAL.slate;
+      ctx.fillRect(inner.x, inner.y, inner.w, inner.h);
+      ctx.restore();
+    }
+    if (this.weather === "clear") return;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(inner.x, inner.y, inner.w, inner.h);
+    ctx.clip();
+
+    if (this.weather === "rain" || this.weather === "storm") {
+      const multiplier = this.weather === "storm" ? 1.7 : 1;
+      ctx.fillStyle = "rgba(139,171,205,0.8)";
+      for (const drop of this.drops) {
+        const y = (drop.y + time * drop.speed * multiplier) % inner.h;
+        ctx.fillRect(inner.x + drop.x, inner.y + y, 1, drop.len);
+      }
+      if (this.weather === "storm" && (time % 7) < 0.16) {
+        ctx.fillStyle = "rgba(234,212,170,0.55)";
+        ctx.fillRect(inner.x, inner.y, inner.w, inner.h);
+      }
+    } else if (this.weather === "snow") {
+      ctx.fillStyle = "rgba(255,255,255,0.9)";
+      for (const flake of this.flakes) {
+        const y = (flake.y + time * flake.speed) % inner.h;
+        const x = flake.x + Math.sin(time * 0.9 + flake.phase) * 3;
+        ctx.fillRect(inner.x + Math.max(0, Math.min(inner.w - flake.size, x)), inner.y + y, flake.size, flake.size);
+      }
+    } else if (this.weather === "fog") {
+      ctx.fillStyle = "rgba(192,203,220,0.5)";
+      for (let index = 0; index < 5; index += 1) {
+        const offset = Math.sin(time * 0.4 + index) * 6;
+        ctx.fillRect(inner.x, inner.y + 6 + index * 7 + offset, inner.w, 2);
+      }
+    }
+    ctx.restore();
+  }
+
   private drawWindowBeam(ctx: CanvasRenderingContext2D) {
     ctx.save();
-    ctx.globalAlpha = this.phase === "night" ? 0.05 : this.phase === "dusk" ? 0.06 : 0.08;
+    const alpha = this.phase === "night" ? 0.05 : this.phase === "dusk" ? 0.06 : 0.08;
+    ctx.globalAlpha = alpha;
     ctx.fillStyle = this.phase === "night" ? PAL.cyan : PAL.lemon;
     ctx.beginPath();
     ctx.moveTo(WINDOW.x + 6, 64);
@@ -384,6 +546,17 @@ export class RoomEngine {
 
   private drawLighting(ctx: CanvasRenderingContext2D) {
     if (this.phase === "day") return;
+    if (this.phase === "morning") {
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+      const glow = ctx.createRadialGradient(192, 120, 40, 192, 120, 210);
+      glow.addColorStop(0, "rgba(254,231,97,0.10)");
+      glow.addColorStop(1, "rgba(254,231,97,0)");
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, 0, ROOM.width, ROOM.height);
+      ctx.restore();
+      return;
+    }
     const light = this.lightCtx;
     light.globalCompositeOperation = "source-over";
     light.clearRect(0, 0, ROOM.width, ROOM.height);
@@ -400,13 +573,13 @@ export class RoomEngine {
     ctx.save();
     ctx.globalCompositeOperation = "screen";
     const glow = ctx.createRadialGradient(324, 88, 2, 324, 88, 56);
-    glow.addColorStop(0, this.phase === "night" ? "rgba(254,174,52,0.40)" : "rgba(254,174,52,0.24)");
+    glow.addColorStop(0, night ? "rgba(254,174,52,0.40)" : "rgba(254,174,52,0.24)");
     glow.addColorStop(1, "rgba(254,174,52,0)");
     ctx.fillStyle = glow;
     ctx.fillRect(260, 24, 128, 132);
 
     const bulb = ctx.createRadialGradient(270, 34, 1, 270, 34, 40);
-    bulb.addColorStop(0, this.phase === "night" ? "rgba(254,231,97,0.34)" : "rgba(254,231,97,0.18)");
+    bulb.addColorStop(0, night ? "rgba(254,231,97,0.34)" : "rgba(254,231,97,0.18)");
     bulb.addColorStop(1, "rgba(254,231,97,0)");
     ctx.fillStyle = bulb;
     ctx.fillRect(222, 0, 96, 84);
@@ -441,11 +614,11 @@ export class RoomEngine {
       ctx.fillText(text, Math.round(x), Math.round(y));
     };
     label("你", this.player.x, this.player.y - 27, PAL.cyan);
-    for (const npc of this.npcs) {
-      const near = Math.hypot(npc.x - this.player.x, npc.y - this.player.y) < 58;
-      if (!near && this.hoverNpcId !== npc.spec.id) continue;
-      const crowded = Math.abs(npc.x - this.player.x) < 26 && Math.abs(npc.y - this.player.y) < 30;
-      label(npc.spec.name, npc.x, npc.y - (crowded ? 40 : 27), PAL.cream);
+    for (const peer of this.peers.values()) {
+      const near = Math.hypot(peer.x - this.player.x, peer.y - this.player.y) < 58;
+      if (!near && this.hoverPeerId !== peer.id) continue;
+      const crowded = Math.abs(peer.x - this.player.x) < 26 && Math.abs(peer.y - this.player.y) < 30;
+      label(peer.nickname, peer.x, peer.y - (crowded ? 40 : 27), peer.online ? PAL.cream : PAL.steel);
     }
     if (this.hoverCage) {
       const cx = OCTAGON.x + OCTAGON.w / 2;
@@ -465,8 +638,14 @@ export class RoomEngine {
 
   private drawBubble(ctx: CanvasRenderingContext2D) {
     if (!this.bubble) return;
-    const npc = this.npcs.find((entry) => entry.spec.id === this.bubble?.npcId);
-    if (!npc) return;
+    const anchor =
+      this.bubble.id === "self"
+        ? { x: this.player.x, y: this.player.y }
+        : (() => {
+            const peer = this.peers.get(this.bubble!.id);
+            return peer ? { x: peer.x, y: peer.y } : null;
+          })();
+    if (!anchor) return;
     ctx.save();
     ctx.font = '10px "FusionPixel", monospace';
     const maxTextWidth = 108;
@@ -486,9 +665,9 @@ export class RoomEngine {
     const textWidth = Math.max(...lines.map((line) => ctx.measureText(line).width), 24);
     const w = Math.ceil(textWidth) + 12;
     const h = lines.length * 11 + 10;
-    let bx = Math.round(npc.x - w / 2);
+    let bx = Math.round(anchor.x - w / 2);
     bx = Math.max(4, Math.min(ROOM.width - w - 4, bx));
-    let by = Math.round(npc.y - 30 - h);
+    let by = Math.round(anchor.y - 30 - h);
     by = Math.max(70, by);
 
     ctx.fillStyle = PAL.ink;
@@ -496,8 +675,8 @@ export class RoomEngine {
     ctx.fillStyle = PAL.cream;
     this.blockRect(ctx, bx + 1, by + 1, w - 2, h - 2);
     ctx.fillStyle = PAL.ink;
-    ctx.fillRect(Math.round(npc.x) - 3, by + h, 6, 2);
-    ctx.fillRect(Math.round(npc.x) - 2, by + h + 2, 4, 2);
+    ctx.fillRect(Math.round(anchor.x) - 3, by + h, 6, 2);
+    ctx.fillRect(Math.round(anchor.x) - 2, by + h + 2, 4, 2);
 
     ctx.fillStyle = PAL.ink;
     ctx.textAlign = "left";
@@ -512,10 +691,10 @@ export class RoomEngine {
     ctx.fillRect(x, y + 2, w, h - 4);
   }
 
-  private hitNpc(x: number, y: number): Npc | null {
-    const sorted = [...this.npcs].sort((a, b) => b.y - a.y);
-    for (const npc of sorted) {
-      if (x >= npc.x - 8 && x <= npc.x + 8 && y >= npc.y - 26 && y <= npc.y + 1) return npc;
+  private hitPeer(x: number, y: number): Peer | null {
+    const sorted = [...this.peers.values()].sort((a, b) => b.y - a.y);
+    for (const peer of sorted) {
+      if (x >= peer.x - 8 && x <= peer.x + 8 && y >= peer.y - 26 && y <= peer.y + 1) return peer;
     }
     return null;
   }
@@ -544,20 +723,21 @@ export class RoomEngine {
 
   private onBlur = () => {
     this.keys.clear();
+    this.joystick = { x: 0, y: 0 };
   };
 
   private onMouseMove = (event: MouseEvent) => {
     const rect = this.canvas.getBoundingClientRect();
     const x = ((event.clientX - rect.left) / rect.width) * ROOM.width;
     const y = ((event.clientY - rect.top) / rect.height) * ROOM.height;
-    const npc = this.hitNpc(x, y);
-    this.hoverNpcId = npc ? npc.spec.id : null;
-    this.hoverCage = !npc && this.cageAt(x, y);
-    this.canvas.style.cursor = npc || this.hoverCage ? "pointer" : "default";
+    const peer = this.hitPeer(x, y);
+    this.hoverPeerId = peer ? peer.id : null;
+    this.hoverCage = !peer && this.cageAt(x, y);
+    this.canvas.style.cursor = peer || this.hoverCage ? "pointer" : "default";
   };
 
   private onMouseLeave = () => {
-    this.hoverNpcId = null;
+    this.hoverPeerId = null;
     this.hoverCage = false;
     this.canvas.style.cursor = "default";
   };
@@ -566,10 +746,9 @@ export class RoomEngine {
     const rect = this.canvas.getBoundingClientRect();
     const x = ((event.clientX - rect.left) / rect.width) * ROOM.width;
     const y = ((event.clientY - rect.top) / rect.height) * ROOM.height;
-    const npc = this.hitNpc(x, y);
-    if (npc) {
-      this.say(npc.spec.id);
-      this.opts.onSelectNpc?.(npc.spec.id);
+    const peer = this.hitPeer(x, y);
+    if (peer) {
+      this.opts.onSelectMember?.(peer.id);
       return;
     }
     if (this.cageAt(x, y)) this.opts.onEnterCage?.();

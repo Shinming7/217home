@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCharacterSprite } from "../../game/character";
-import { NPC_SPECS, PLAYER_LOOK } from "../../game/roomData";
+import { fallbackLook } from "../../game/looks";
 import { PixelPortrait } from "../../ui/PixelPortrait";
 import type { CharacterLook, Dir } from "../../game/types";
 
@@ -9,7 +9,17 @@ type Stage = "select" | "fight" | "over";
 type Outcome = "win" | "lose" | "draw";
 type LogTone = "you" | "foe" | "system";
 type LogEntry = { id: number; text: string; tone: LogTone };
-type FightRecord = { [npcId: string]: { w: number; l: number } };
+type FightRecord = { [fighterId: string]: { w: number; l: number } };
+
+export type Fighter = { id: string; nickname: string; look: CharacterLook | null };
+
+type FightModalProps = {
+  self: { id: string; nickname: string; look: CharacterLook };
+  opponents: Fighter[];
+  initialFoeId?: string | null;
+  onClose: () => void;
+  onResult: (targetId: string, result: "win" | "lose", rounds: number) => void;
+};
 
 const MOVES: { id: Move; label: string; hint: string }[] = [
   { id: "jab", label: "直拳", hint: "准 · 10~13" },
@@ -19,11 +29,6 @@ const MOVES: { id: Move; label: string; hint: string }[] = [
 ];
 
 const MOVE_LABEL: Record<Move, string> = { jab: "直拳", hook: "摆拳", block: "格挡", dodge: "闪避" };
-
-const TAUNTS: Record<string, string> = {
-  alan: "夜猫子的拳头，可不会打瞌睡。",
-  xiaoman: "输了的人去泡咖啡！",
-};
 
 const RESULT_COPY: Record<Outcome, { kicker: string; title: string; line: (name: string) => string }> = {
   win: {
@@ -43,7 +48,7 @@ const RESULT_COPY: Record<Outcome, { kicker: string; title: string; line: (name:
   },
 };
 
-const RECORD_KEY = "217-fight-record";
+const RECORD_KEY = "217-fight-record-v3";
 
 function loadRecord(): FightRecord {
   try {
@@ -95,12 +100,7 @@ function FighterCanvas({ look, dir }: { look: CharacterLook; dir: Dir }) {
   return <canvas ref={ref} width={48} height={72} aria-hidden="true" />;
 }
 
-type FightModalProps = {
-  onClose: () => void;
-  initialFoeId?: string | null;
-};
-
-export function FightModal({ onClose, initialFoeId }: FightModalProps) {
+export function FightModal({ self, opponents, initialFoeId, onClose, onResult }: FightModalProps) {
   const [stage, setStage] = useState<Stage>("select");
   const [foeId, setFoeId] = useState<string | null>(null);
   const [youHp, setYouHp] = useState(100);
@@ -114,8 +114,10 @@ export function FightModal({ onClose, initialFoeId }: FightModalProps) {
   const timers = useRef<number[]>([]);
   const logId = useRef(1);
   const logRef = useRef<HTMLDivElement>(null);
+  const reported = useRef(false);
 
-  const foe = foeId ? (NPC_SPECS.find((npc) => npc.id === foeId) ?? null) : null;
+  const foe = foeId ? (opponents.find((entry) => entry.id === foeId) ?? null) : null;
+  const foeLook = foe?.look ?? (foe ? fallbackLook(foe.id) : self.look);
 
   const clearTimers = useCallback(() => {
     for (const timer of timers.current) window.clearTimeout(timer);
@@ -123,12 +125,13 @@ export function FightModal({ onClose, initialFoeId }: FightModalProps) {
   }, []);
 
   const startFight = useCallback(
-    (npcId: string) => {
-      const npc = NPC_SPECS.find((entry) => entry.id === npcId);
-      if (!npc) return;
+    (fighterId: string) => {
+      const fighter = opponents.find((entry) => entry.id === fighterId);
+      if (!fighter) return;
       clearTimers();
       logId.current = 1;
-      setFoeId(npcId);
+      reported.current = false;
+      setFoeId(fighterId);
       setStage("fight");
       setYouHp(100);
       setFoeHp(100);
@@ -136,9 +139,9 @@ export function FightModal({ onClose, initialFoeId }: FightModalProps) {
       setBusy(false);
       setResult(null);
       setFx({ key: 0, you: "", foe: "", youTaken: 0, foeTaken: 0 });
-      setLog([{ id: 0, text: `裁判挥手：${npc.name} 对阵 你，开打！`, tone: "system" }]);
+      setLog([{ id: 0, text: `裁判挥手：${fighter.nickname} 对阵 你，开打！`, tone: "system" }]);
     },
-    [clearTimers],
+    [clearTimers, opponents],
   );
 
   useEffect(() => {
@@ -178,12 +181,8 @@ export function FightModal({ onClose, initialFoeId }: FightModalProps) {
     const youDodging = move === "dodge" && Math.random() < 0.7;
     const foeDodging = foeMove === "dodge" && Math.random() < 0.7;
 
-    const youRes = youAttack
-      ? rollAttack(move, foeMove, foeDodging)
-      : { damage: 0, evaded: false, blocked: false };
-    const foeRes = foeAttack
-      ? rollAttack(foeMove, move, youDodging)
-      : { damage: 0, evaded: false, blocked: false };
+    const youRes = youAttack ? rollAttack(move, foeMove, foeDodging) : { damage: 0, evaded: false, blocked: false };
+    const foeRes = foeAttack ? rollAttack(foeMove, move, youDodging) : { damage: 0, evaded: false, blocked: false };
 
     const nextFoeHp = Math.max(0, foeHp - youRes.damage);
     const nextYouHp = Math.max(0, youHp - foeRes.damage);
@@ -201,13 +200,13 @@ export function FightModal({ onClose, initialFoeId }: FightModalProps) {
           push(
             youRes.blocked
               ? `你的${MOVE_LABEL[move]}被压住大半，只擦到 ${youRes.damage} 点。`
-              : `你的${MOVE_LABEL[move]}正中${foe.name}，打掉 ${youRes.damage} 点！`,
+              : `你的${MOVE_LABEL[move]}正中${foe.nickname}，打掉 ${youRes.damage} 点！`,
             "you",
           );
         } else if (youRes.evaded) {
-          push(`${foe.name}侧身一闪，你的${MOVE_LABEL[move]}落空。`, "foe");
+          push(`${foe.nickname}侧身一闪，你的${MOVE_LABEL[move]}落空。`, "foe");
         } else if (foeMove === "block") {
-          push(`你的${MOVE_LABEL[move]}砸在${foe.name}的护臂上，没讨到便宜。`, "you");
+          push(`你的${MOVE_LABEL[move]}砸在${foe.nickname}的护臂上，没讨到便宜。`, "you");
         } else {
           push(`你的${MOVE_LABEL[move]}挥空了，气势还在。`, "you");
         }
@@ -223,17 +222,17 @@ export function FightModal({ onClose, initialFoeId }: FightModalProps) {
         if (foeRes.damage > 0) {
           push(
             foeRes.blocked
-              ? `${foe.name}的${MOVE_LABEL[foeMove]}被你挡下，只疼了一下。`
-              : `${foe.name}的${MOVE_LABEL[foeMove]}击中你，-${foeRes.damage}。`,
+              ? `${foe.nickname}的${MOVE_LABEL[foeMove]}被你挡下，只疼了一下。`
+              : `${foe.nickname}的${MOVE_LABEL[foeMove]}击中你，-${foeRes.damage}。`,
             "foe",
           );
         } else if (foeRes.evaded) {
-          push(`你低头闪过${foe.name}的${MOVE_LABEL[foeMove]}，台下叫好。`, "you");
+          push(`你低头闪过${foe.nickname}的${MOVE_LABEL[foeMove]}，台下叫好。`, "you");
         } else {
-          push(`${foe.name}的${MOVE_LABEL[foeMove]}擦着耳边飞过。`, "system");
+          push(`${foe.nickname}的${MOVE_LABEL[foeMove]}擦着耳边飞过。`, "system");
         }
       } else if (!youAttack) {
-        push(foeMove === "block" ? `${foe.name}收肩护住面门。` : `${foe.name}跳着步子，等你露出破绽。`, "foe");
+        push(foeMove === "block" ? `${foe.nickname}收肩护住面门。` : `${foe.nickname}跳着步子，等你露出破绽。`, "foe");
       }
     }
 
@@ -269,10 +268,14 @@ export function FightModal({ onClose, initialFoeId }: FightModalProps) {
         const outcome: Outcome = nextFoeHp <= 0 && nextYouHp <= 0 ? "draw" : nextFoeHp <= 0 ? "win" : "lose";
         setResult(outcome);
         setStage("over");
+        if (outcome !== "draw" && !reported.current) {
+          reported.current = true;
+          onResult(foe.id, outcome, Math.max(1, round - 1));
+        }
         setRecord((prev) => {
-          const current = prev[foe.id] ?? { w: 0, l: 0 };
-          if (outcome === "win") return { ...prev, [foe.id]: { w: current.w + 1, l: current.l } };
-          if (outcome === "lose") return { ...prev, [foe.id]: { w: current.w, l: current.l + 1 } };
+          const currentRecord = prev[foe.id] ?? { w: 0, l: 0 };
+          if (outcome === "win") return { ...prev, [foe.id]: { w: currentRecord.w + 1, l: currentRecord.l } };
+          if (outcome === "lose") return { ...prev, [foe.id]: { w: currentRecord.w, l: currentRecord.l + 1 } };
           return prev;
         });
       }
@@ -299,7 +302,9 @@ export function FightModal({ onClose, initialFoeId }: FightModalProps) {
         <header className="fight-head">
           <div>
             <span className="profile-kicker">OCTAGON · 217</span>
-            <h2 className="fight-title">{stage === "select" ? "八角笼 · 挑个对手" : foe ? `八角笼 · 对战${foe.name}` : "八角笼"}</h2>
+            <h2 className="fight-title">
+              {stage === "select" ? "八角笼 · 挑个对手" : foe ? `八角笼 · 对战${foe.nickname}` : "八角笼"}
+            </h2>
           </div>
           <button className="icon-btn" onClick={onClose} aria-label="离开八角笼">
             ×
@@ -308,21 +313,28 @@ export function FightModal({ onClose, initialFoeId }: FightModalProps) {
 
         {stage === "select" || !foe ? (
           <div className="fight-select">
-            {NPC_SPECS.map((npc) => {
-              const rec = record[npc.id];
-              return (
-                <button key={npc.id} className="fighter-choice" onClick={() => startFight(npc.id)}>
-                  <span className="fighter-portrait">
-                    <PixelPortrait look={npc.look} />
-                  </span>
-                  <span className="fighter-name">{npc.name}</span>
-                  <span className="fighter-taunt">{TAUNTS[npc.id] ?? "放马过来。"}</span>
-                  <span className="fighter-record">{rec ? `战绩 ${rec.w} 胜 ${rec.l} 负` : "初次交手"}</span>
-                  <span className="fighter-cta">开打</span>
-                </button>
-              );
-            })}
-            <p className="fight-note">纯属屋内的友好切磋 · 战绩只记在这台设备上</p>
+            {opponents.length === 0 ? (
+              <div className="empty-state">
+                <p>屋里还没有别的住户可以切磋。</p>
+                <p className="fineprint">等朋友进来，或者把自己的小人捏好先。</p>
+              </div>
+            ) : (
+              opponents.map((fighter) => {
+                const rec = record[fighter.id];
+                return (
+                  <button key={fighter.id} className="fighter-choice" onClick={() => startFight(fighter.id)}>
+                    <span className="fighter-portrait">
+                      <PixelPortrait look={fighter.look ?? fallbackLook(fighter.id)} />
+                    </span>
+                    <span className="fighter-name">{fighter.nickname}</span>
+                    <span className="fighter-taunt">{fighter.nickname}：来吧，点到为止。</span>
+                    <span className="fighter-record">{rec ? `战绩 ${rec.w} 胜 ${rec.l} 负` : "初次交手"}</span>
+                    <span className="fighter-cta">开打</span>
+                  </button>
+                );
+              })
+            )}
+            <p className="fight-note">纯属屋内的友好切磋 · 打完会加一点好感度 · 战绩记在这台设备上</p>
           </div>
         ) : (
           <div className="fight-stage" aria-busy={busy}>
@@ -336,7 +348,7 @@ export function FightModal({ onClose, initialFoeId }: FightModalProps) {
               </div>
               <span className="fight-round">ROUND {round}</span>
               <div className="fight-side right">
-                <span className="fight-name">{foe.name}</span>
+                <span className="fight-name">{foe.nickname}</span>
                 <div className="hp-track">
                   <div className={`hp-fill ${hpTone(foeHp)}`} style={{ width: `${foeHp}%` }} />
                 </div>
@@ -357,13 +369,13 @@ export function FightModal({ onClose, initialFoeId }: FightModalProps) {
               <div className="fight-fighters">
                 <div className="fight-slot left">
                   <div className="fight-sprite-wrap" key={`you-${fx.key}`} data-fx={fx.you}>
-                    <FighterCanvas look={PLAYER_LOOK} dir="right" />
+                    <FighterCanvas look={self.look} dir="right" />
                     {fx.youTaken > 0 ? <span className="fight-dmg">-{fx.youTaken}</span> : null}
                   </div>
                 </div>
                 <div className="fight-slot right">
                   <div className="fight-sprite-wrap" key={`foe-${fx.key}`} data-fx={fx.foe}>
-                    <FighterCanvas look={foe.look} dir="left" />
+                    <FighterCanvas look={foeLook} dir="left" />
                     {fx.foeTaken > 0 ? <span className="fight-dmg">-{fx.foeTaken}</span> : null}
                   </div>
                 </div>
@@ -380,12 +392,7 @@ export function FightModal({ onClose, initialFoeId }: FightModalProps) {
 
             <div className="fight-moves">
               {MOVES.map((item) => (
-                <button
-                  key={item.id}
-                  className="move-btn"
-                  disabled={busy || stage === "over"}
-                  onClick={() => playRound(item.id)}
-                >
+                <button key={item.id} className="move-btn" disabled={busy || stage === "over"} onClick={() => playRound(item.id)}>
                   <span className="move-label">{item.label}</span>
                   <span className="move-hint">{item.hint}</span>
                 </button>
@@ -400,7 +407,8 @@ export function FightModal({ onClose, initialFoeId }: FightModalProps) {
               ROUND {Math.max(1, round - 1)} · {RESULT_COPY[result].kicker}
             </p>
             <h3>{RESULT_COPY[result].title}</h3>
-            <p className="fight-result-line">{RESULT_COPY[result].line(foe.name)}</p>
+            <p className="fight-result-line">{RESULT_COPY[result].line(foe.nickname)}</p>
+            {result === "draw" ? <p className="fineprint">平局不记好感，改天再分胜负。</p> : null}
             <div className="fight-result-actions">
               <button className="pixel-btn primary" onClick={() => startFight(foe.id)}>
                 再战
