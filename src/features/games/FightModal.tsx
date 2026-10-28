@@ -19,7 +19,6 @@ type FightModalProps = {
   self: { id: string; nickname: string; look: CharacterLook };
   opponents: Fighter[];
   onlineTargets: Fighter[];
-  initialFoeId?: string | null;
   initialMode?: "online" | null;
   autoJoin?: boolean;
   onClose: () => void;
@@ -94,16 +93,13 @@ export function FightModal({
   self,
   opponents,
   onlineTargets,
-  initialFoeId,
   initialMode,
   autoJoin,
   onClose,
   onResult,
   onNotify,
 }: FightModalProps) {
-  const [mode, setMode] = useState<FightMode>(
-    initialFoeId ? "ai" : initialMode === "online" ? "online" : "mode",
-  );
+  const [mode, setMode] = useState<FightMode>(initialMode === "online" ? "online" : "mode");
   const [onlineInside, setOnlineInside] = useState(false);
   const [stage, setStage] = useState<Stage>("select");
   const [foeId, setFoeId] = useState<string | null>(null);
@@ -147,10 +143,6 @@ export function FightModal({
     },
     [clearTimers, opponents],
   );
-
-  useEffect(() => {
-    if (initialFoeId) startFight(initialFoeId);
-  }, [initialFoeId, startFight]);
 
   useEffect(() => clearTimers, [clearTimers]);
 

@@ -1805,6 +1805,317 @@ select.text-input {
   font-size: 9px;
 }
 
+.fish-tank-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 2px dashed #3a4466;
+  background: rgba(24, 20, 37, 0.35);
+}
+
+.fish-tank-cta h3 {
+  margin: 0 0 3px;
+  font-size: 14px;
+  font-weight: normal;
+  letter-spacing: 2px;
+  color: #ead4aa;
+}
+
+.fish-tank-cta .fineprint {
+  margin: 0;
+}
+
+/* ---------- 多人鱼缸 ---------- */
+
+.tank-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 232px;
+  gap: 14px;
+  align-items: start;
+}
+
+.tank-stage {
+  position: relative;
+  border: 3px solid #124e89;
+  background: #071a2c;
+  box-shadow: 0 0 0 3px #181425;
+  overflow: hidden;
+}
+
+.tank-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  touch-action: none;
+}
+
+.tank-hud {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
+.tank-chip {
+  padding: 3px 7px;
+  background: rgba(24, 20, 37, 0.8);
+  border: 2px solid #3a4466;
+  color: #c0cbdc;
+  font-size: 10px;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+.tank-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 18px;
+  text-align: center;
+  background: rgba(9, 20, 34, 0.52);
+}
+
+.tank-overlay.spectator {
+  background: rgba(9, 20, 34, 0.4);
+  justify-content: flex-start;
+  padding-top: 46px;
+}
+
+.tank-overlay-kicker {
+  padding: 2px 8px;
+  border: 2px solid #2ce8f5;
+  color: #2ce8f5;
+  font-size: 9px;
+  letter-spacing: 2px;
+}
+
+.tank-overlay h3 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: normal;
+  letter-spacing: 3px;
+  color: #fee761;
+  text-shadow: 2px 2px 0 #181425;
+}
+
+.tank-overlay p {
+  margin: 0;
+  max-width: 380px;
+  color: #c0cbdc;
+  line-height: 1.7;
+}
+
+.tank-overlay .fineprint {
+  max-width: 380px;
+  margin: 0;
+  color: #8b9bb4;
+}
+
+.tank-overlay .pixel-btn {
+  min-width: 132px;
+  margin-top: 2px;
+}
+
+.tank-controls {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.tank-controls > * {
+  pointer-events: auto;
+}
+
+.tank-pad {
+  display: grid;
+  grid-template-columns: repeat(3, 34px);
+  grid-template-rows: repeat(3, 34px);
+  gap: 2px;
+}
+
+.tank-pad-btn {
+  appearance: none;
+  padding: 0;
+  border: 2px solid #181425;
+  background: #262b44;
+  color: #ead4aa;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 rgba(24, 20, 37, 0.7);
+  touch-action: none;
+  user-select: none;
+}
+
+.tank-pad-btn:active,
+.tank-pad-btn.pressed {
+  background: #124e89;
+  color: #ffffff;
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 rgba(24, 20, 37, 0.7);
+}
+
+.tank-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.tank-dash {
+  appearance: none;
+  width: 58px;
+  height: 58px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 0;
+  border: 3px solid #181425;
+  background: #fee761;
+  color: #181425;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 3px 3px 0 rgba(24, 20, 37, 0.7);
+  touch-action: none;
+  user-select: none;
+}
+
+.tank-dash small {
+  font-size: 9px;
+  letter-spacing: 1px;
+  opacity: 0.72;
+}
+
+.tank-dash:active:not(:disabled) {
+  transform: translate(1px, 1px);
+  box-shadow: 2px 2px 0 rgba(24, 20, 37, 0.7);
+}
+
+.tank-dash.cooling {
+  background: #262b44;
+  color: #8b9bb4;
+  border-color: #3a4466;
+  box-shadow: none;
+  cursor: default;
+}
+
+.tank-leave {
+  font-size: 11px;
+}
+
+.tank-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.tank-card {
+  border: 2px solid #3a4466;
+  background: rgba(24, 20, 37, 0.35);
+  padding: 9px 10px;
+}
+
+.tank-card h3 {
+  margin: 0 0 7px;
+  font-size: 12px;
+  font-weight: normal;
+  letter-spacing: 2px;
+  color: #ead4aa;
+}
+
+.tank-rank {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tank-rank li {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #c0cbdc;
+}
+
+.tank-rank li.me {
+  color: #fee761;
+}
+
+.tank-rank .rank-no {
+  color: #5a6988;
+  font-size: 9px;
+}
+
+.tank-rank .rank-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tank-rank .rank-size {
+  color: #63c74d;
+  font-size: 10px;
+}
+
+.tank-dead-note {
+  margin: 7px 0 0;
+  color: #8b9bb4;
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.tank-log ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 148px;
+  overflow: auto;
+  font-size: 10px;
+  line-height: 1.6;
+  color: #8b9bb4;
+}
+
+.tank-log li {
+  padding-bottom: 3px;
+  border-bottom: 1px dashed rgba(58, 68, 102, 0.55);
+}
+
+.tank-log li:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
 /* ---------- 站长面板 ---------- */
 
 .claim-form {
@@ -2116,6 +2427,23 @@ select.text-input {
   .fish-layout {
     grid-template-columns: 1fr;
   }
+
+  .tank-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .tank-side {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .tank-side .tank-card {
+    flex: 1 1 220px;
+  }
+
+  .tank-side > .fineprint {
+    flex-basis: 100%;
+  }
 }
 
 @media (max-width: 720px) {
@@ -2276,6 +2604,49 @@ select.text-input {
     width: 62px;
     height: 62px;
     font-size: 28px;
+  }
+
+  .tank-overlay {
+    gap: 6px;
+    padding: 10px;
+  }
+
+  .tank-overlay.spectator {
+    padding-top: 34px;
+  }
+
+  .tank-overlay h3 {
+    font-size: 18px;
+    letter-spacing: 2px;
+  }
+
+  .tank-overlay p {
+    font-size: 11px;
+    line-height: 1.6;
+  }
+
+  .tank-overlay .fineprint {
+    display: none;
+  }
+
+  .tank-chip {
+    padding: 2px 6px;
+    font-size: 9px;
+  }
+
+  .tank-pad {
+    grid-template-columns: repeat(3, 30px);
+    grid-template-rows: repeat(3, 30px);
+  }
+
+  .tank-pad-btn {
+    font-size: 10px;
+  }
+
+  .tank-dash {
+    width: 48px;
+    height: 48px;
+    font-size: 11px;
   }
 
   .sprite-strip canvas {
@@ -3834,6 +4205,47 @@ body.forced-landscape-body .app.forced-landscape .rps-label {
 body.forced-landscape-body .app.forced-landscape .fish-layout {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 10px;
+}
+
+body.forced-landscape-body .app.forced-landscape .tank-layout {
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: 10px;
+}
+
+body.forced-landscape-body .app.forced-landscape .tank-side {
+  flex-direction: column;
+  max-height: 56dvh;
+  overflow: auto;
+}
+
+body.forced-landscape-body .app.forced-landscape .tank-overlay {
+  gap: 5px;
+  padding: 12px;
+}
+
+body.forced-landscape-body .app.forced-landscape .tank-overlay h3 {
+  font-size: 19px;
+  letter-spacing: 2px;
+}
+
+body.forced-landscape-body .app.forced-landscape .tank-overlay p {
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+body.forced-landscape-body .app.forced-landscape .tank-pad {
+  grid-template-columns: repeat(3, 32px);
+  grid-template-rows: repeat(3, 32px);
+}
+
+body.forced-landscape-body .app.forced-landscape .tank-dash {
+  width: 46px;
+  height: 46px;
+  font-size: 11px;
+}
+
+body.forced-landscape-body .app.forced-landscape .tank-log ul {
+  max-height: 100px;
 }
 
 body.forced-landscape-body .app.forced-landscape .fish-water {

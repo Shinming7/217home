@@ -12,6 +12,7 @@ import { InvitePopup } from "./features/inbox/InvitePopup";
 import { RpsModal } from "./features/games/RpsModal";
 import { FishModal } from "./features/games/FishModal";
 import { PokerModal } from "./features/games/PokerModal";
+import { FishTankGame } from "./features/games/FishTankGame";
 import { AdminPanel } from "./features/admin/AdminPanel";
 import { OwnerClaim } from "./features/admin/OwnerClaim";
 import { api, ApiError, errorText, setAuthToken } from "./net/api";
@@ -25,7 +26,7 @@ import type { Dir, PeerInput, Phase, WeatherKind } from "./game/types";
 import type { RoomEngine } from "./game/engine";
 
 type Stage = "boot" | "join" | "create" | "room";
-type PanelKind = "photos" | "board" | "inbox" | "rps" | "fish" | "poker" | "admin" | "edit";
+type PanelKind = "photos" | "board" | "inbox" | "rps" | "fish" | "poker" | "tank" | "admin" | "edit";
 
 const PHASE_LABEL: Record<Phase, string> = { morning: "晨光", day: "白天", dusk: "黄昏", night: "夜晚" };
 const WEATHER_LABEL: Record<WeatherKind, string> = {
@@ -54,7 +55,6 @@ export default function App() {
   const [selected, setSelected] = useState<MemberDetail | null>(null);
   const [panel, setPanel] = useState<PanelKind | null>(null);
   const [fightOpen, setFightOpen] = useState(false);
-  const [fightFoeId, setFightFoeId] = useState<string | null>(null);
   const [fightInvite, setFightInvite] = useState(false);
   const [inboxPeerId, setInboxPeerId] = useState<string | null>(null);
   const [dismissedInvites, setDismissedInvites] = useState<string[]>([]);
@@ -118,7 +118,6 @@ export default function App() {
     setSelected(null);
     setPanel(null);
     setFightOpen(false);
-    setFightFoeId(null);
     setFightInvite(false);
     setInboxPeerId(null);
     setDismissedInvites([]);
@@ -276,7 +275,6 @@ export default function App() {
     setSelected(null);
     setPanel(null);
     setInboxPeerId(null);
-    setFightFoeId(null);
     setFightInvite(true);
     setFightOpen(true);
     void api.readInbox(fromId).catch(() => {});
@@ -332,7 +330,6 @@ export default function App() {
     setSelected(null);
     setPanel(null);
     setFightOpen(false);
-    setFightFoeId(null);
     setFightInvite(false);
     setInboxPeerId(null);
     setDismissedInvites([]);
@@ -417,13 +414,13 @@ export default function App() {
             paused={paused}
             onSelectMember={(id) => void openProfile(id)}
             onEnterCage={() => {
-              setFightFoeId(null);
               setFightInvite(false);
               setFightOpen(true);
             }}
             onOpenPhotos={() => setPanel("photos")}
             onOpenBoard={() => setPanel("board")}
             onOpenPoker={() => setPanel("poker")}
+            onOpenTank={() => setPanel("tank")}
             onEngine={(engine) => {
               engineRef.current = engine;
             }}
@@ -493,12 +490,6 @@ export default function App() {
           onClose={() => setSelected(null)}
           onChat={() => void handleChat()}
           onMessage={() => openInbox(selected.member.id)}
-          onFight={() => {
-            setFightFoeId(selected.member.id);
-            setFightInvite(false);
-            setFightOpen(true);
-            setSelected(null);
-          }}
         />
       ) : null}
 
@@ -509,12 +500,10 @@ export default function App() {
           onlineTargets={onlineResidents
             .filter((resident) => resident.id !== self.id)
             .map((resident) => ({ id: resident.id, nickname: resident.nickname, look: resident.look }))}
-          initialFoeId={fightFoeId}
           initialMode={fightInvite ? "online" : null}
           autoJoin={fightInvite}
           onClose={() => {
             setFightOpen(false);
-            setFightFoeId(null);
             setFightInvite(false);
           }}
           onResult={(targetId, result, rounds) => void handleFightResult(targetId, result, rounds)}
@@ -551,8 +540,9 @@ export default function App() {
         />
       ) : null}
       {panel === "rps" ? <RpsModal opponents={opponents} onClose={() => setPanel(null)} /> : null}
-      {panel === "fish" ? <FishModal onClose={() => setPanel(null)} /> : null}
+      {panel === "fish" ? <FishModal onClose={() => setPanel(null)} onOpenTank={() => setPanel("tank")} /> : null}
       {panel === "poker" ? <PokerModal onClose={() => setPanel(null)} /> : null}
+      {panel === "tank" ? <FishTankGame onClose={() => setPanel(null)} /> : null}
       {panel === "edit" ? (
         <Creator self={self} mode="edit" onSaved={handleSaved} onCancel={() => setPanel(null)} />
       ) : null}

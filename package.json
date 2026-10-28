@@ -14,7 +14,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "dev:function": "deno run --allow-net=127.0.0.1:8000 dev/function-local.ts",
     "check:function": "deno check functionDirectory/app.ts dev/mock-backend.ts",
-    "test:function": "deno test functionDirectory/poker_test.ts",
+    "test:function": "deno test functionDirectory/poker_test.ts functionDirectory/fishtank_test.ts",
     "dev:mock": "deno run --allow-net=127.0.0.1:8000 dev/mock-backend.ts"
   },
   "dependencies": {

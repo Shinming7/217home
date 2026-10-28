@@ -222,6 +222,45 @@ export type OnlineFightView = {
   };
 };
 
+export type TankFish = {
+  id: string;
+  kind: "player" | "npc";
+  nickname: string;
+  x: number;
+  y: number;
+  size: number;
+  dirX: number;
+  dirY: number;
+  speed: number;
+  hue: number;
+  eats: number;
+  dashing: boolean;
+};
+
+export type FishTankMe = {
+  memberId: string;
+  inTank: boolean;
+  alive: boolean;
+  size: number;
+  speed: number;
+  eats: number;
+  rank: number;
+  respawnInMs: number;
+  dashing: boolean;
+  dashReadyInMs: number;
+};
+
+export type FishTankView = {
+  width: number;
+  height: number;
+  capacity: number;
+  count: number;
+  serverNow: number;
+  fish: TankFish[];
+  me: FishTankMe | null;
+  logs: string[];
+};
+
 export type AdminOverview = {
   members: MemberSummary[];
   messageCount: number;

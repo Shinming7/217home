@@ -406,6 +406,34 @@ export function OnlineFight({
     );
   }
 
+  const inviteBlock = inviteTargets.length > 0 ? (
+    <div className="online-invites">
+      <p className="online-invites-title">邀请在线住户</p>
+      <ul className="online-invite-list">
+        {inviteTargets.map((target) => (
+          <li key={target.id} className="online-invite-row">
+            <span className="online-invite-portrait">
+              <PixelPortrait
+                look={target.look ?? fallbackLook(target.id)}
+                label={`${target.nickname}的头像`}
+                size={26}
+              />
+            </span>
+            <span className="online-invite-name">{target.nickname}</span>
+            <button
+              className="pixel-btn"
+              disabled={inviting === target.id || invited.includes(target.id)}
+              onClick={() => void sendInvite(target)}
+            >
+              {invited.includes(target.id) ? "已邀请" : inviting === target.id ? "送信中…" : "约战"}
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p className="fineprint">邀请会送进对方的信箱，10 分钟内有效；对方接受后会直接走进笼子，和你开打。</p>
+    </div>
+  ) : null;
+
   if (fight.viewer.inside) {
     return (
       <div className="online-lobby">
@@ -421,6 +449,7 @@ export function OnlineFight({
           </button>
           {warning ? <p className="online-warning" role="alert">{warning}</p> : null}
         </div>
+        {inviteBlock}
       </div>
     );
   }
@@ -451,33 +480,7 @@ export function OnlineFight({
         <p className="fineprint">输赢两边都会加好感 · 每天第一次交手才加</p>
       </div>
 
-      {!waitingFighter && inviteTargets.length > 0 ? (
-        <div className="online-invites">
-          <p className="online-invites-title">邀请在线住户</p>
-          <ul className="online-invite-list">
-            {inviteTargets.map((target) => (
-              <li key={target.id} className="online-invite-row">
-                <span className="online-invite-portrait">
-                  <PixelPortrait
-                    look={target.look ?? fallbackLook(target.id)}
-                    label={`${target.nickname}的头像`}
-                    size={26}
-                  />
-                </span>
-                <span className="online-invite-name">{target.nickname}</span>
-                <button
-                  className="pixel-btn"
-                  disabled={inviting === target.id || invited.includes(target.id)}
-                  onClick={() => void sendInvite(target)}
-                >
-                  {invited.includes(target.id) ? "已邀请" : inviting === target.id ? "送信中…" : "约战"}
-                </button>
-              </li>
-            ))}
-          </ul>
-          <p className="fineprint">邀请会送进对方的信箱，10 分钟内有效；先走进笼子，对方一到就开打。</p>
-        </div>
-      ) : null}
+      {!waitingFighter ? inviteBlock : null}
 
       {warning ? <p className="online-warning" role="alert">{warning}</p> : null}
     </div>

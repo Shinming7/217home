@@ -72,6 +72,7 @@ export type RoomEngineOptions = {
   onOpenPhotos?: () => void;
   onOpenBoard?: () => void;
   onOpenPoker?: () => void;
+  onOpenTank?: () => void;
 };
 
 const COLS = ROOM.width / ROOM.tile;
@@ -145,6 +146,7 @@ export class RoomEngine {
   private hoverSofa = false;
   private hoverDog = false;
   private hoverPoker = false;
+  private hoverTank = false;
   private raf = 0;
   private last = 0;
   private destroyed = false;
@@ -707,6 +709,16 @@ export class RoomEngine {
       ctx.strokeRect(POKER_TABLE.x - 3.5, POKER_TABLE.y - 3.5, POKER_TABLE.w + 7, POKER_TABLE.h + 7);
       ctx.restore();
     }
+    if (this.hoverTank) {
+      const tank = PROPS.find((prop) => prop.kind === "tank");
+      if (tank) {
+        ctx.save();
+        ctx.strokeStyle = PAL.lemon;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(tank.x - 3.5, tank.y - 3.5, tank.w + 7, tank.h + 7);
+        ctx.restore();
+      }
+    }
   }
 
   private drawWeather(ctx: CanvasRenderingContext2D, time: number) {
@@ -934,6 +946,10 @@ export class RoomEngine {
     if (this.hoverBoard) {
       this.drawHint(ctx, CORKBOARD.x + CORKBOARD.w / 2, 56, "点击看留言板");
     }
+    if (this.hoverTank) {
+      const tank = PROPS.find((prop) => prop.kind === "tank");
+      if (tank) this.drawHint(ctx, tank.x + tank.w / 2, tank.y - 14, "点击看鱼缸");
+    }
     if (this.hoverCage) {
       this.drawHint(ctx, OCTAGON.x + OCTAGON.w / 2, OCTAGON.y - 36, "点击进入八角笼");
     }
@@ -1075,6 +1091,12 @@ export class RoomEngine {
     return x >= POKER_TABLE.x - 4 && x <= POKER_TABLE.x + POKER_TABLE.w + 4 && y >= POKER_TABLE.y - 6 && y <= POKER_TABLE.y + POKER_TABLE.h + 4;
   }
 
+  private tankAt(x: number, y: number): boolean {
+    const tank = PROPS.find((prop) => prop.kind === "tank");
+    if (!tank) return false;
+    return x >= tank.x - 3 && x <= tank.x + tank.w + 3 && y >= tank.y - 4 && y <= tank.y + tank.h + 3;
+  }
+
   private onKeyDown = (event: KeyboardEvent) => {
     if (isTypingTarget(event.target)) return;
     const key = event.key.toLowerCase();
@@ -1110,6 +1132,14 @@ export class RoomEngine {
       !this.hoverPhotos &&
       !this.hoverBoard &&
       this.pokerAt(x, y);
+    this.hoverTank =
+      !peer &&
+      !this.hoverDog &&
+      !this.hoverSofa &&
+      !this.hoverPhotos &&
+      !this.hoverBoard &&
+      !this.hoverPoker &&
+      this.tankAt(x, y);
     this.hoverCage =
       !peer &&
       !this.hoverDog &&
@@ -1117,6 +1147,7 @@ export class RoomEngine {
       !this.hoverPhotos &&
       !this.hoverBoard &&
       !this.hoverPoker &&
+      !this.hoverTank &&
       this.cageAt(x, y);
     const interactive =
       peer ||
@@ -1125,6 +1156,7 @@ export class RoomEngine {
       this.hoverPhotos ||
       this.hoverBoard ||
       this.hoverPoker ||
+      this.hoverTank ||
       this.hoverCage;
     this.canvas.style.cursor = interactive ? "pointer" : "default";
   };
@@ -1136,6 +1168,7 @@ export class RoomEngine {
     this.hoverPhotos = false;
     this.hoverBoard = false;
     this.hoverPoker = false;
+    this.hoverTank = false;
     this.hoverCage = false;
     this.canvas.style.cursor = "default";
   };
@@ -1173,6 +1206,10 @@ export class RoomEngine {
     }
     if (this.pokerAt(x, y)) {
       this.opts.onOpenPoker?.();
+      return;
+    }
+    if (this.tankAt(x, y)) {
+      this.opts.onOpenTank?.();
       return;
     }
     if (this.cageAt(x, y)) this.opts.onEnterCage?.();

@@ -14,9 +14,9 @@ const RARITY_TEXT: Record<string, string> = {
 
 const FISH_COLORS = ["#8b9bb4", "#c0cbdc", "#feae34", "#f77622", "#f6757a", "#2ce8f5", "#63c74d", "#b55088"];
 
-type FishModalProps = { onClose: () => void };
+type FishModalProps = { onClose: () => void; onOpenTank: () => void };
 
-export function FishModal({ onClose }: FishModalProps) {
+export function FishModal({ onClose, onOpenTank }: FishModalProps) {
   const [fish, setFish] = useState<FishInfo[]>([]);
   const [collection, setCollection] = useState<DexEntry[]>([]);
   const [result, setResult] = useState<FishResult | null>(null);
@@ -144,6 +144,15 @@ export function FishModal({ onClose }: FishModalProps) {
             })}
           </ul>
         </div>
+      </div>
+      <div className="fish-tank-cta">
+        <div>
+          <h3>一起下缸</h3>
+          <p className="fineprint">鱼缸里最多 8 位住户，跟真人一起玩大鱼吃小鱼。</p>
+        </div>
+        <button className="pixel-btn primary" onClick={onOpenTank}>
+          下缸一起玩
+        </button>
       </div>
       {error ? <p className="form-error" role="alert">{error}</p> : null}
       <p className="fineprint">钓鱼结果由小屋服务端判定并存进图鉴，换设备登录也能看到。</p>

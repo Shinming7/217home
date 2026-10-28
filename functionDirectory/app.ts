@@ -30,6 +30,18 @@ import {
   type FightSettlement,
   type FightState,
 } from "./fight.ts";
+import {
+  advance as advanceTank,
+  createTank,
+  ensureTankShape,
+  FishTankError,
+  joinTank,
+  leaveTank,
+  moveTank,
+  respawnTank,
+  viewTank,
+  type FishTankState,
+} from "./fishtank.ts";
 
 const DEFAULT_PASSCODE = "217217";
 const DEFAULT_OWNER_KEY = "0217";
@@ -1296,6 +1308,95 @@ export function application({ db, storage }: { db: Db; storage: Storage }) {
     });
   }
 
+  async function withTankState<T>(mutate: (state: FishTankState, now: number) => T): Promise<T> {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const found = rows(await db.from("game_state").select("key,state,version").eq("key", "fish").limit(1));
+      let state: FishTankState;
+      let version: number;
+      if (!found.length) {
+        state = createTank();
+        const created = rows(
+          await db.from("game_state")
+            .insertIfAbsent(
+              { key: "fish", state, version: 1, updated_at: iso() },
+              { onConflict: "key" },
+            )
+            .select("key"),
+        );
+        if (!created.length) continue;
+        version = 1;
+      } else {
+        const stored = found[0].state;
+        state =
+          stored && Array.isArray(stored.players) && Array.isArray(stored.npcs)
+            ? (stored as FishTankState)
+            : createTank();
+        version = Number(found[0].version);
+        if (!Number.isSafeInteger(version) || version < 1) version = 1;
+      }
+      const before = JSON.stringify(state);
+      const now = Date.now();
+      ensureTankShape(state, now);
+      advanceTank(state, now);
+      const outcome = mutate(state, now);
+      if (JSON.stringify(state) === before) return outcome;
+      const updated = rows(
+        await db.from("game_state")
+          .update({ state, version: version + 1, updated_at: iso(now) })
+          .eq("key", "fish")
+          .eq("version", version)
+          .select("key"),
+      );
+      if (updated.length) return outcome;
+    }
+    throw new AppError("tank_busy", 409);
+  }
+
+  async function tankRun(member: any, mutate: (state: FishTankState, now: number) => void): Promise<Response> {
+    try {
+      const tank = await withTankState((state, now) => {
+        mutate(state, now);
+        return viewTank(state, member.id, now);
+      });
+      return json({ tank });
+    } catch (error) {
+      if (error instanceof FishTankError) throw new AppError(error.code, 409);
+      throw error;
+    }
+  }
+
+  async function fishTankState(request: Request, member: any): Promise<Response> {
+    if (!allowedByLimit(`tank:poll:${member.id}`, 720, 60_000)) throw new AppError("rate_limited", 429);
+    const body = await readJson(request, 512);
+    const dx = Number(body?.dx ?? 0);
+    const dy = Number(body?.dy ?? 0);
+    const dash = body?.dash === true;
+    return tankRun(member, (state, now) => {
+      moveTank(state, member.id, dx, dy, now, dash);
+    });
+  }
+
+  async function fishTankJoin(member: any): Promise<Response> {
+    if (!allowedByLimit(`tank:join:${member.id}`, 30, 60_000)) throw new AppError("rate_limited", 429);
+    return tankRun(member, (state, now) => {
+      joinTank(state, { id: member.id, nickname: member.nickname }, now);
+    });
+  }
+
+  async function fishTankLeave(member: any): Promise<Response> {
+    if (!allowedByLimit(`tank:join:${member.id}`, 30, 60_000)) throw new AppError("rate_limited", 429);
+    return tankRun(member, (state, now) => {
+      leaveTank(state, member.id, now);
+    });
+  }
+
+  async function fishTankRespawn(member: any): Promise<Response> {
+    if (!allowedByLimit(`tank:respawn:${member.id}`, 30, 60_000)) throw new AppError("rate_limited", 429);
+    return tankRun(member, (state, now) => {
+      respawnTank(state, member.id, now);
+    });
+  }
+
   async function settleFights(settlements: FightSettlement[]): Promise<void> {
     for (const entry of settlements) {
       try {
@@ -1666,6 +1767,10 @@ export function application({ db, storage }: { db: Db; storage: Storage }) {
     if (path === "/games/rps" && method === "POST") return await rpsPlay(request, auth.member);
     if (path === "/games/fish" && method === "POST") return await fishCast(auth.member);
     if (path === "/games/fight" && method === "POST") return await fightRecord(request, auth.member);
+    if (path === "/games/fish/tank/state" && method === "POST") return await fishTankState(request, auth.member);
+    if (path === "/games/fish/tank/join" && method === "POST") return await fishTankJoin(auth.member);
+    if (path === "/games/fish/tank/leave" && method === "POST") return await fishTankLeave(auth.member);
+    if (path === "/games/fish/tank/respawn" && method === "POST") return await fishTankRespawn(auth.member);
     if (path === "/games/poker/state" && method === "GET") return await pokerState(auth.member);
     if (path === "/games/poker/join" && method === "POST") return await pokerJoin(auth.member);
     if (path === "/games/poker/leave" && method === "POST") return await pokerLeave(auth.member);

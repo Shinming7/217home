@@ -15,6 +15,7 @@ type RoomCanvasProps = {
   onOpenPhotos?: () => void;
   onOpenBoard?: () => void;
   onOpenPoker?: () => void;
+  onOpenTank?: () => void;
   onEngine?: (engine: RoomEngine | null) => void;
 };
 
@@ -40,6 +41,7 @@ export function RoomCanvas({
   onOpenPhotos,
   onOpenBoard,
   onOpenPoker,
+  onOpenTank,
   onEngine,
 }: RoomCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -50,6 +52,7 @@ export function RoomCanvas({
   const photosRef = useRef(onOpenPhotos);
   const boardRef = useRef(onOpenBoard);
   const pokerRef = useRef(onOpenPoker);
+  const tankRef = useRef(onOpenTank);
   const pausedRef = useRef(paused);
   const initialRef = useRef({ selfLook, start, phase, weather, peers, photoPreviews });
   const heldDirs = useRef<Set<Dir>>(new Set());
@@ -62,6 +65,7 @@ export function RoomCanvas({
     photosRef.current = onOpenPhotos;
     boardRef.current = onOpenBoard;
     pokerRef.current = onOpenPoker;
+    tankRef.current = onOpenTank;
     pausedRef.current = paused;
   });
 
@@ -79,6 +83,7 @@ export function RoomCanvas({
       onOpenPhotos: () => photosRef.current?.(),
       onOpenBoard: () => boardRef.current?.(),
       onOpenPoker: () => pokerRef.current?.(),
+      onOpenTank: () => tankRef.current?.(),
     });
     engine.setPeers(initial.peers);
     engine.setPhotoPreviews(initial.photoPreviews ?? []);
