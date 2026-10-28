@@ -8,17 +8,19 @@ import { PhotoWall } from "./features/photos/PhotoWall";
 import { MessageBoard } from "./features/board/MessageBoard";
 import { RpsModal } from "./features/games/RpsModal";
 import { FishModal } from "./features/games/FishModal";
+import { PokerModal } from "./features/games/PokerModal";
 import { AdminPanel } from "./features/admin/AdminPanel";
 import { api, ApiError, errorText, setAuthToken } from "./net/api";
 import { clearStoredSession, loadStoredSession, saveStoredSession } from "./net/session";
 import { usePresence } from "./net/presence";
+import { useForcedLandscape } from "./features/room/useLandscape";
 import type { JoinResult, MemberDetail, MemberSummary, SelfMember } from "./net/types";
 import { dialogueFor, fallbackLook } from "./game/looks";
 import type { Dir, PeerInput, Phase, WeatherKind } from "./game/types";
 import type { RoomEngine } from "./game/engine";
 
 type Stage = "boot" | "join" | "create" | "room";
-type PanelKind = "photos" | "board" | "rps" | "fish" | "admin" | "edit";
+type PanelKind = "photos" | "board" | "rps" | "fish" | "poker" | "admin" | "edit";
 
 const PHASE_LABEL: Record<Phase, string> = { morning: "晨光", day: "白天", dusk: "黄昏", night: "夜晚" };
 const WEATHER_LABEL: Record<WeatherKind, string> = {
@@ -167,6 +169,7 @@ export default function App() {
   const phase: Phase = presence?.phase ?? "dusk";
   const weather: WeatherKind = presence?.weather.kind ?? "clear";
   const paused = Boolean(selected) || fightOpen || panel !== null;
+  const forcedLandscape = useForcedLandscape(stage === "room");
 
   const handleJoined = (result: JoinResult) => {
     setAuthToken(result.token);
@@ -278,7 +281,7 @@ export default function App() {
   const onlineCount = presence?.onlineCount ?? members.filter((member) => member.online).length;
 
   return (
-    <div className="app">
+    <div className={forcedLandscape ? "app forced-landscape" : "app"}>
       <header className="topbar">
         <div className="brand">
           <span className="brand-badge" aria-hidden="true">
@@ -316,6 +319,8 @@ export default function App() {
               setFightFoeId(null);
               setFightOpen(true);
             }}
+            onOpenPhotos={() => setPanel("photos")}
+            onOpenPoker={() => setPanel("poker")}
             onEngine={(engine) => {
               engineRef.current = engine;
             }}
@@ -336,6 +341,9 @@ export default function App() {
         <button className={panel === "fish" ? "dock-btn active" : "dock-btn"} onClick={() => setPanel("fish")}>
           钓鱼
         </button>
+        <button className={panel === "poker" ? "dock-btn active" : "dock-btn"} onClick={() => setPanel("poker")}>
+          德州
+        </button>
         <button className={panel === "edit" ? "dock-btn active" : "dock-btn"} onClick={() => setPanel("edit")}>
           我的档案
         </button>
@@ -351,7 +359,7 @@ export default function App() {
 
       <footer className="hintbar">
         <p>
-          <span className="key">WASD</span> / <span className="key">方向键</span> 移动 · 点击小人打开档案 · 点击八角笼开打
+          <span className="key">WASD</span> / <span className="key">方向键</span> 移动 · 点击小人打开档案 · 照片墙、牌桌、八角笼都能互动
         </p>
         <p className="fineprint">
           {offline
@@ -393,8 +401,9 @@ export default function App() {
       {panel === "board" ? (
         <MessageBoard isOwner={self.role === "owner"} onClose={() => setPanel(null)} onChanged={() => void refreshMembers()} />
       ) : null}
-      {panel === "rps" ? <RpsModal onClose={() => setPanel(null)} /> : null}
+      {panel === "rps" ? <RpsModal opponents={opponents} onClose={() => setPanel(null)} /> : null}
       {panel === "fish" ? <FishModal onClose={() => setPanel(null)} /> : null}
+      {panel === "poker" ? <PokerModal onClose={() => setPanel(null)} /> : null}
       {panel === "edit" ? (
         <Creator self={self} mode="edit" onSaved={handleSaved} onCancel={() => setPanel(null)} />
       ) : null}

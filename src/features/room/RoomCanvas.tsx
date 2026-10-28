@@ -11,6 +11,8 @@ type RoomCanvasProps = {
   paused?: boolean;
   onSelectMember: (id: string) => void;
   onEnterCage?: () => void;
+  onOpenPhotos?: () => void;
+  onOpenPoker?: () => void;
   onEngine?: (engine: RoomEngine | null) => void;
 };
 
@@ -23,6 +25,8 @@ export function RoomCanvas({
   paused = false,
   onSelectMember,
   onEnterCage,
+  onOpenPhotos,
+  onOpenPoker,
   onEngine,
 }: RoomCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -30,8 +34,11 @@ export function RoomCanvas({
   const selectRef = useRef(onSelectMember);
   const engineCbRef = useRef(onEngine);
   const cageRef = useRef(onEnterCage);
+  const photosRef = useRef(onOpenPhotos);
+  const pokerRef = useRef(onOpenPoker);
   const pausedRef = useRef(paused);
   const initialRef = useRef({ selfLook, start, phase, weather, peers });
+  const padRef = useRef<HTMLDivElement | null>(null);
   const [knob, setKnob] = useState({ x: 0, y: 0 });
   const dragging = useRef(false);
 
@@ -39,6 +46,8 @@ export function RoomCanvas({
     selectRef.current = onSelectMember;
     engineCbRef.current = onEngine;
     cageRef.current = onEnterCage;
+    photosRef.current = onOpenPhotos;
+    pokerRef.current = onOpenPoker;
     pausedRef.current = paused;
   });
 
@@ -53,6 +62,8 @@ export function RoomCanvas({
       weather: initial.weather,
       onSelectMember: (id) => selectRef.current(id),
       onEnterCage: () => cageRef.current?.(),
+      onOpenPhotos: () => photosRef.current?.(),
+      onOpenPoker: () => pokerRef.current?.(),
     });
     engine.setPeers(initial.peers);
     engine.setPaused(pausedRef.current);
@@ -106,7 +117,7 @@ export function RoomCanvas({
   }, [peers]);
 
   const applyStick = (clientX: number, clientY: number) => {
-    const pad = document.getElementById("room-joystick");
+    const pad = padRef.current;
     if (!pad) return;
     const rect = pad.getBoundingClientRect();
     const cx = rect.left + rect.width / 2;
@@ -128,6 +139,10 @@ export function RoomCanvas({
     setKnob({ x: 0, y: 0 });
   };
 
+  useEffect(() => {
+    if (paused) releaseStick();
+  }, [paused]);
+
   return (
     <div className="room-canvas-wrap">
       <canvas
@@ -137,6 +152,7 @@ export function RoomCanvas({
         aria-label="217之家像素小屋。使用方向键、WASD 或左下角摇杆走动，点击住户查看档案，点击房间中央的八角笼进入对打。"
       />
       <div
+        ref={padRef}
         id="room-joystick"
         className="joystick"
         role="presentation"
@@ -149,11 +165,12 @@ export function RoomCanvas({
         onPointerMove={(event) => {
           if (dragging.current) applyStick(event.clientX, event.clientY);
         }}
-        onPointerUp={releaseStick}
-        onPointerCancel={releaseStick}
-        onPointerLeave={() => {
-          if (dragging.current) releaseStick();
+        onPointerUp={(event) => {
+          event.currentTarget.releasePointerCapture?.(event.pointerId);
+          releaseStick();
         }}
+        onPointerCancel={releaseStick}
+        onLostPointerCapture={releaseStick}
       >
         <span className="joystick-knob" style={{ transform: `translate(${knob.x}px, ${knob.y}px)` }} />
       </div>

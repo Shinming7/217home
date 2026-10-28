@@ -1263,3 +1263,373 @@ body {
     font-size: 14px;
   }
 }
+
+/* ---- 八角笼 · 玩法与联机 ---- */
+
+.fight-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.fight-mode-card {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  padding: 18px 12px 14px;
+  background: linear-gradient(180deg, #1f1b2e, #181425);
+  border: 2px solid #5a6988;
+  box-shadow: 0 4px 0 rgba(24, 20, 37, 0.8);
+  color: #ead4aa;
+  font-family: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+
+.fight-mode-card:hover {
+  border-color: #fee761;
+  background: #262b44;
+}
+
+.fight-mode-card:focus-visible {
+  outline: 2px solid #fee761;
+  outline-offset: 2px;
+}
+
+.fight-mode-card.online {
+  border-color: #f77622;
+}
+
+.fight-mode-card.online:hover {
+  border-color: #feae34;
+}
+
+.fight-mode-badge {
+  padding: 2px 8px;
+  background: #3a4466;
+  border: 2px solid #5a6988;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: #2ce8f5;
+}
+
+.fight-mode-card.online .fight-mode-badge {
+  color: #fee761;
+  border-color: #feae34;
+}
+
+.fight-mode-name {
+  font-size: 18px;
+  letter-spacing: 3px;
+  color: #fee761;
+}
+
+.fight-mode-desc {
+  min-height: 51px;
+  font-size: 10px;
+  line-height: 1.7;
+  color: #8b9bb4;
+}
+
+.fight-mode-cta {
+  padding: 5px 14px;
+  background: #feae34;
+  border: 2px solid #f77622;
+  box-shadow: 0 3px 0 #181425;
+  color: #181425;
+  font-size: 12px;
+}
+
+.fight-mode-card.online .fight-mode-cta {
+  background: #e43b44;
+  border-color: #b13e53;
+  color: #fff;
+}
+
+.fight-back {
+  grid-column: 1 / -1;
+  justify-self: start;
+  margin: 0;
+  padding: 2px 0;
+  background: none;
+  border: none;
+  color: #8b9bb4;
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+
+.fight-back:hover {
+  color: #fee761;
+}
+
+.fight-back:focus-visible {
+  outline: 2px solid #fee761;
+  outline-offset: 2px;
+}
+
+.online-loading {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  padding: 30px 10px;
+  color: #8b9bb4;
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+.online-lobby {
+  display: grid;
+  gap: 10px;
+}
+
+.online-lobby-card,
+.online-wait-card {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  padding: 16px 14px;
+  background: #181425;
+  border: 2px solid #3a4466;
+  text-align: center;
+}
+
+.online-lobby-kicker {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: #f77622;
+}
+
+.online-lobby-name {
+  margin: 0;
+  font-size: 18px;
+  font-weight: normal;
+  letter-spacing: 2px;
+  color: #fee761;
+}
+
+.online-lobby-line {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.7;
+  color: #c0cbdc;
+}
+
+.online-lobby-hint {
+  margin: 0;
+  font-size: 10px;
+  color: #8b9bb4;
+}
+
+.online-lobby-vs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  letter-spacing: 2px;
+  color: #ead4aa;
+}
+
+.online-lobby-vs i {
+  font-style: normal;
+  padding: 1px 5px;
+  background: #262b44;
+  border: 2px solid #5a6988;
+  font-size: 10px;
+  color: #f77622;
+}
+
+.online-lobby-hp {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+}
+
+.online-hp-row {
+  display: grid;
+  grid-template-columns: 66px 1fr 28px;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: #8b9bb4;
+  text-align: left;
+}
+
+.online-lobby-fighters {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 4px 0;
+}
+
+.online-lobby-fighters i {
+  font-style: normal;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: #f77622;
+}
+
+.online-lobby-slot {
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  font-size: 10px;
+  color: #8b9bb4;
+}
+
+.online-lobby-slot canvas {
+  width: 64px;
+  height: 64px;
+  padding: 2px;
+  background: #ead4aa;
+  box-shadow: 0 0 0 2px #181425;
+  image-rendering: pixelated;
+}
+
+.online-empty-slot {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  background: #262b44;
+  box-shadow: 0 0 0 2px #181425;
+  color: #5a6988;
+  font-size: 22px;
+}
+
+.online-join {
+  margin-top: 2px;
+}
+
+.online-warning {
+  margin: 0;
+  padding: 6px 8px;
+  background: #3e2731;
+  border: 2px solid #e43b44;
+  color: #f6757a;
+  font-size: 10px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.online-wait-card {
+  padding: 22px 14px;
+}
+
+.online-wait-portrait {
+  padding: 3px;
+  background: #ead4aa;
+  box-shadow: 0 0 0 2px #181425;
+  line-height: 0;
+}
+
+.online-wait-portrait canvas {
+  display: block;
+  width: 84px;
+  height: 84px;
+  image-rendering: pixelated;
+}
+
+.online-wait-title {
+  margin: 4px 0 0;
+  font-size: 17px;
+  letter-spacing: 3px;
+  color: #fee761;
+}
+
+.online-wait-line {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.7;
+  color: #c0cbdc;
+}
+
+.online-wait-dots {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: 6px;
+  color: #f77622;
+  animation: online-wait 1.2s steps(2, end) infinite;
+}
+
+@keyframes online-wait {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.online-stage {
+  position: relative;
+}
+
+.fight-round.urgent {
+  color: #f6757a;
+  border-color: #e43b44;
+  animation: hp-blink 0.7s steps(2, end) infinite;
+}
+
+.online-turn {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px;
+  background: #181425;
+  border: 2px solid #3a4466;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #c0cbdc;
+}
+
+.online-foe {
+  color: #8b9bb4;
+}
+
+.online-foe.ready {
+  color: #f6757a;
+}
+
+.online-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.online-foot .fineprint {
+  margin: 0;
+  text-align: right;
+}
+
+.online-foot .pixel-btn {
+  padding: 4px 8px;
+  font-size: 10px;
+}
+
+.move-btn.picked {
+  border-color: #fee761;
+  background: #5a6988;
+  box-shadow:
+    inset 0 0 0 2px #fee761,
+    0 3px 0 #181425;
+}
+
+.move-btn.picked:disabled {
+  opacity: 0.85;
+}
+
+@media (max-width: 640px) {
+  .fight-mode-name {
+    font-size: 16px;
+  }
+
+  .fight-mode-desc {
+    min-height: 0;
+  }
+
+  .online-lobby-fighters {
+    gap: 12px;
+  }
+}

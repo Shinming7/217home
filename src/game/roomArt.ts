@@ -553,6 +553,68 @@ function drawTank(ctx: Ctx) {
   px(ctx, 20, 11, 1, 1, PAL.silver);
 }
 
+function fillEllipse(ctx: Ctx, cx: number, cy: number, rx: number, ry: number, color: string) {
+  ctx.fillStyle = color;
+  const top = Math.ceil(cy - ry);
+  const bottom = Math.floor(cy + ry);
+  for (let y = top; y <= bottom; y += 1) {
+    const t = (y - cy) / ry;
+    const width = Math.floor(rx * Math.sqrt(Math.max(0, 1 - t * t)));
+    if (width > 0) ctx.fillRect(Math.round(cx - width), y, width * 2, 1);
+  }
+}
+
+function drawPokerTable(ctx: Ctx) {
+  // 地面投影
+  fillEllipse(ctx, 32, 35, 29, 4, "rgba(24,20,37,0.26)");
+
+  // 桌腿
+  for (const lx of [10, 50]) {
+    px(ctx, lx, 25, 4, 10, PAL.ink);
+    px(ctx, lx + 1, 26, 2, 8, PAL.wood);
+  }
+
+  // 木质边框
+  fillEllipse(ctx, 32, 23, 30, 13.5, PAL.ink);
+  fillEllipse(ctx, 32, 22.5, 29, 12.5, PAL.wood);
+  fillEllipse(ctx, 32, 22, 28, 11.5, PAL.woodLight);
+  px(ctx, 6, 18, 18, 1, PAL.sand);
+
+  // 绿色牌毡
+  fillEllipse(ctx, 32, 22, 25.5, 9.5, PAL.ink);
+  fillEllipse(ctx, 32, 22, 24.5, 8.5, PAL.forest);
+  fillEllipse(ctx, 32, 21.5, 22, 7, PAL.grass);
+  fillEllipse(ctx, 32, 21.5, 20.5, 6, PAL.forest);
+
+  // 公共牌
+  for (let index = 0; index < 5; index += 1) {
+    const cx = 32 - 12 + index * 6;
+    px(ctx, cx, 20, 4, 5, PAL.ink);
+    px(ctx, cx + 1, 20, 3, 4, PAL.cream);
+    px(ctx, cx + 1, 20, 3, 1, PAL.white);
+  }
+
+  // 筹码堆
+  for (const [cx, color] of [
+    [13, PAL.cherry],
+    [18, PAL.blue],
+    [46, PAL.lemon],
+    [51, PAL.coral],
+  ] as const) {
+    px(ctx, cx, 24, 3, 2, PAL.ink);
+    px(ctx, cx, 24, 3, 1, color);
+  }
+
+  // 八个座位标记
+  for (let index = 0; index < 8; index += 1) {
+    const angle = (index * Math.PI) / 4 + Math.PI / 8;
+    const sx = Math.round(32 + Math.cos(angle) * 28);
+    const sy = Math.round(22 + Math.sin(angle) * 11.5);
+    px(ctx, sx - 1, sy - 1, 3, 3, PAL.ink);
+    px(ctx, sx, sy - 1, 1, 1, PAL.cream);
+  }
+}
+
 export function createPropCanvas(spec: PropSpec): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
   canvas.width = spec.w;
@@ -566,6 +628,7 @@ export function createPropCanvas(spec: PropSpec): HTMLCanvasElement {
   if (spec.kind === "shelf") drawShelf(ctx);
   if (spec.kind === "plant") drawPlant(ctx);
   if (spec.kind === "tank") drawTank(ctx);
+  if (spec.kind === "poker") drawPokerTable(ctx);
   return canvas;
 }
 

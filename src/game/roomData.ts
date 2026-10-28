@@ -9,13 +9,14 @@ export const WINDOW = { x: 152, y: 10, w: 80, h: 46 } as const;
 export const OCTAGON = { x: 142, y: 134, w: 112, h: 80 } as const;
 export const PENDANT = { x: 260, y: 0, shadeY: 18, glowX: 270, glowY: 30 } as const;
 export const CORKBOARD = { x: 288, y: 12, w: 64, h: 42 } as const;
+export const POKER_TABLE = { x: 256, y: 146, w: 64, h: 38 } as const;
 export const PHOTO_FRAMES = [
   { x: 34, y: 14, w: 28, h: 22, variant: "sunset" as const },
   { x: 68, y: 20, w: 34, h: 26, variant: "friends" as const },
   { x: 108, y: 12, w: 24, h: 20, variant: "moon" as const },
 ];
 
-export type PropKind = "bed" | "desk" | "chair" | "sofa" | "shelf" | "plant" | "tank";
+export type PropKind = "bed" | "desk" | "chair" | "sofa" | "shelf" | "plant" | "tank" | "poker";
 export type PropSpec = { id: string; kind: PropKind; x: number; y: number; w: number; h: number };
 
 export const PROPS: PropSpec[] = [
@@ -26,6 +27,7 @@ export const PROPS: PropSpec[] = [
   { id: "sofa", kind: "sofa", x: 32, y: 180, w: 88, h: 40 },
   { id: "plant", kind: "plant", x: 126, y: 206, w: 26, h: 38 },
   { id: "tank", kind: "tank", x: 326, y: 184, w: 50, h: 46 },
+  { id: "poker", kind: "poker", x: POKER_TABLE.x, y: POKER_TABLE.y, w: POKER_TABLE.w, h: POKER_TABLE.h },
 ];
 
 export const SOLIDS: Rect[] = [
@@ -37,6 +39,7 @@ export const SOLIDS: Rect[] = [
   { x: 32, y: 180, w: 88, h: 40 },
   { x: 126, y: 206, w: 26, h: 38 },
   { x: 326, y: 184, w: 50, h: 46 },
+  { x: 256, y: 152, w: 64, h: 32 },
 ];
 
 export const PLAYER_START = { x: 196, y: 228 };

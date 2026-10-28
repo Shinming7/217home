@@ -6,12 +6,37 @@ import {
   verifyPasscode,
   type PasscodeRecord,
 } from "./auth.ts";
+import {
+  applyAction,
+  advance,
+  createTable,
+  joinTable,
+  leaveTable,
+  PokerError,
+  publicTable,
+  rebuy,
+  startNextHand,
+  type PokerState,
+} from "./poker.ts";
+import {
+  advanceFight,
+  createFightState,
+  joinArena,
+  leaveArena,
+  FightError,
+  publicFight,
+  submitMove,
+  touchFight,
+  type FightSettlement,
+  type FightState,
+} from "./fight.ts";
 
 const DEFAULT_PASSCODE = "217217";
 const ROOM_BOUNDS = { minX: 0, maxX: 384, minY: 0, maxY: 256 };
 const ONLINE_WINDOW_MS = 12_000;
-const PHOTO_ORIG_MAX = 900_000;
+const PHOTO_ORIG_MAX = 2 * 1024 * 1024;
 const PHOTO_PIXEL_MAX = 160_000;
+const PHOTO_WALL_LIMIT = 30;
 const LOOK_KEYS = [
   "hair",
   "hairDark",
@@ -618,7 +643,7 @@ export function application({ db, storage }: { db: Db; storage: Storage }) {
       await db.from("photos")
         .select("id,member_id,caption,created_at")
         .order("created_at", { ascending: false })
-        .limit(60),
+        .limit(PHOTO_WALL_LIMIT),
     );
     const members = await allMembers(100);
     const byId = new Map(members.map((row) => [row.id, row]));
@@ -638,9 +663,19 @@ export function application({ db, storage }: { db: Db; storage: Storage }) {
     );
   }
 
+  async function photoCount(): Promise<number> {
+    const result = await db.from("photos").select("id", { count: "exact" }).limit(1);
+    if (result?.error || !Number.isSafeInteger(result?.count) || result.count < 0) {
+      if (result?.error) console.error("db_error", result.error.code ?? "");
+      throw new AppError("database_unavailable", 503);
+    }
+    return result.count;
+  }
+
   async function photosCreate(request: Request, member: any): Promise<Response> {
     if (!allowedByLimit(`photo:${member.id}`, 6, 60_000)) throw new AppError("rate_limited", 429);
-    const body = await readJson(request, 2_400_000);
+    if ((await photoCount()) >= PHOTO_WALL_LIMIT) throw new AppError("photo_limit_reached", 409);
+    const body = await readJson(request, 3_400_000);
     const caption = optionalText(body?.caption, 80, "caption");
     const orig = decodeBase64(body?.orig, PHOTO_ORIG_MAX);
     const pixel = decodeBase64(body?.pixel, PHOTO_PIXEL_MAX);
@@ -829,6 +864,9 @@ export function application({ db, storage }: { db: Db; storage: Storage }) {
     const body = await readJson(request, 2048);
     const move = body?.move;
     if (!["rock", "paper", "scissors"].includes(move)) throw new AppError("invalid_move", 400);
+    if (!isUuid(body?.targetId) || body.targetId === member.id) throw new AppError("invalid_target", 400);
+    const target = rows(await db.from("members").select("id,nickname").eq("id", body.targetId).limit(1));
+    if (target.length !== 1) throw new AppError("not_found", 404);
     const options = ["rock", "paper", "scissors"];
     const house = options[Math.floor(Math.random() * 3)];
     const wins: Record<string, string> = { rock: "scissors", paper: "rock", scissors: "paper" };
@@ -839,12 +877,12 @@ export function application({ db, storage }: { db: Db; storage: Storage }) {
           id: crypto.randomUUID(),
           member_id: member.id,
           game: "rps",
-          payload: { move, house, result },
+          payload: { move, house, result, targetId: body.targetId },
           created_at: iso(),
         })
         .select("id"),
     );
-    return json({ house, result });
+    return json({ house, result, opponent: { id: target[0].id, nickname: target[0].nickname } });
   }
 
   async function fightRecord(request: Request, member: any): Promise<Response> {
@@ -869,6 +907,237 @@ export function application({ db, storage }: { db: Db; storage: Storage }) {
     );
     const hearts = await addAffinity(member.id, body.targetId);
     return json({ ok: true, ...hearts });
+  }
+
+  async function withPokerState<T>(mutate: (state: PokerState, now: number) => T): Promise<T> {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const found = rows(await db.from("game_state").select("key,state,version").eq("key", "poker").limit(1));
+      let state: PokerState;
+      let version: number;
+      if (!found.length) {
+        state = createTable();
+        const created = rows(
+          await db.from("game_state")
+            .insertIfAbsent(
+              { key: "poker", state, version: 1, updated_at: iso() },
+              { onConflict: "key" },
+            )
+            .select("key"),
+        );
+        if (!created.length) continue;
+        version = 1;
+      } else {
+        const stored = found[0].state;
+        state = stored && Array.isArray(stored.seats) ? (stored as PokerState) : createTable();
+        version = Number(found[0].version);
+        if (!Number.isSafeInteger(version) || version < 1) version = 1;
+      }
+      const before = JSON.stringify(state);
+      const now = Date.now();
+      advance(state, now);
+      const outcome = mutate(state, now);
+      if (JSON.stringify(state) === before) return outcome;
+      const updated = rows(
+        await db.from("game_state")
+          .update({ state, version: version + 1, updated_at: iso(now) })
+          .eq("key", "poker")
+          .eq("version", version)
+          .select("key"),
+      );
+      if (updated.length) return outcome;
+    }
+    throw new AppError("game_busy", 409);
+  }
+
+  async function pokerRun<T>(member: any, mutate: (state: PokerState, now: number) => T): Promise<Response> {
+    try {
+      const table = await withPokerState((state, now) => {
+        const outcome = mutate(state, now);
+        return outcome ?? publicTable(state, member.id);
+      });
+      return json({ table });
+    } catch (error) {
+      if (error instanceof PokerError) throw new AppError(error.code, 409);
+      throw error;
+    }
+  }
+
+  async function pokerState(member: any): Promise<Response> {
+    if (!allowedByLimit(`poker:poll:${member.id}`, 240, 60_000)) throw new AppError("rate_limited", 429);
+    return pokerRun(member, () => null);
+  }
+
+  async function pokerJoin(member: any): Promise<Response> {
+    if (!allowedByLimit(`poker:join:${member.id}`, 30, 60_000)) throw new AppError("rate_limited", 429);
+    return pokerRun(member, (state, now) => {
+      joinTable(state, member.id, member.nickname, now);
+      return null;
+    });
+  }
+
+  async function pokerLeave(member: any): Promise<Response> {
+    if (!allowedByLimit(`poker:join:${member.id}`, 30, 60_000)) throw new AppError("rate_limited", 429);
+    return pokerRun(member, (state, now) => {
+      leaveTable(state, member.id, now);
+      return null;
+    });
+  }
+
+  async function pokerStart(member: any): Promise<Response> {
+    if (!allowedByLimit(`poker:action:${member.id}`, 120, 60_000)) throw new AppError("rate_limited", 429);
+    return pokerRun(member, (state, now) => {
+      startNextHand(state, member.id, now);
+      return null;
+    });
+  }
+
+  async function pokerAction(request: Request, member: any): Promise<Response> {
+    if (!allowedByLimit(`poker:action:${member.id}`, 120, 60_000)) throw new AppError("rate_limited", 429);
+    const body = await readJson(request, 1024);
+    const action = body?.action;
+    if (!["fold", "check", "call", "raise"].includes(action)) throw new AppError("invalid_action", 400);
+    const amount = body?.amount == null ? undefined : Number(body.amount);
+    return pokerRun(member, (state, now) => {
+      applyAction(state, member.id, action, amount, now);
+      return null;
+    });
+  }
+
+  async function pokerRebuy(member: any): Promise<Response> {
+    if (!allowedByLimit(`poker:action:${member.id}`, 120, 60_000)) throw new AppError("rate_limited", 429);
+    return pokerRun(member, (state, now) => {
+      rebuy(state, member.id, now);
+      return null;
+    });
+  }
+
+  async function settleFights(settlements: FightSettlement[]): Promise<void> {
+    for (const entry of settlements) {
+      try {
+        const stamp = iso();
+        rows(
+          await db.from("game_records")
+            .insert({
+              id: crypto.randomUUID(),
+              member_id: entry.winnerId,
+              game: "fight_online",
+              payload: { targetId: entry.loserId, result: "win", rounds: entry.rounds },
+              created_at: stamp,
+            })
+            .select("id"),
+        );
+        rows(
+          await db.from("game_records")
+            .insert({
+              id: crypto.randomUUID(),
+              member_id: entry.loserId,
+              game: "fight_online",
+              payload: { targetId: entry.winnerId, result: "lose", rounds: entry.rounds },
+              created_at: stamp,
+            })
+            .select("id"),
+        );
+        await addAffinity(entry.winnerId, entry.loserId);
+        await addAffinity(entry.loserId, entry.winnerId);
+      } catch (error) {
+        console.error("fight_settle_failed", error instanceof Error ? error.message : "unknown");
+      }
+    }
+  }
+
+  async function withFightState<T>(
+    viewerId: string,
+    mutate: (state: FightState, now: number, settlements: FightSettlement[]) => T,
+  ): Promise<T> {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const found = rows(await db.from("game_state").select("key,state,version").eq("key", "fight").limit(1));
+      let state: FightState;
+      let version: number;
+      if (!found.length) {
+        state = createFightState();
+        const created = rows(
+          await db.from("game_state")
+            .insertIfAbsent(
+              { key: "fight", state, version: 1, updated_at: iso() },
+              { onConflict: "key" },
+            )
+            .select("key"),
+        );
+        if (!created.length) continue;
+        version = 1;
+      } else {
+        const stored = found[0].state;
+        state = stored && Array.isArray(stored.fighters) ? (stored as FightState) : createFightState();
+        version = Number(found[0].version);
+        if (!Number.isSafeInteger(version) || version < 1) version = 1;
+      }
+      const before = JSON.stringify(state);
+      const now = Date.now();
+      touchFight(state, viewerId, now);
+      const settlements: FightSettlement[] = [];
+      advanceFight(state, now, settlements);
+      const outcome = mutate(state, now, settlements);
+      if (JSON.stringify(state) === before) return outcome;
+      const updated = rows(
+        await db.from("game_state")
+          .update({ state, version: version + 1, updated_at: iso(now) })
+          .eq("key", "fight")
+          .eq("version", version)
+          .select("key"),
+      );
+      if (updated.length) {
+        await settleFights(settlements);
+        return outcome;
+      }
+    }
+    throw new AppError("game_busy", 409);
+  }
+
+  async function fightRun<T>(
+    member: any,
+    mutate: (state: FightState, now: number, settlements: FightSettlement[]) => T,
+  ): Promise<Response> {
+    try {
+      const fight = await withFightState(member.id, (state, now, settlements) => {
+        const outcome = mutate(state, now, settlements);
+        return outcome ?? publicFight(state, member.id);
+      });
+      return json({ fight });
+    } catch (error) {
+      if (error instanceof FightError) throw new AppError(error.code, 409);
+      throw error;
+    }
+  }
+
+  async function fightOnlineState(member: any): Promise<Response> {
+    if (!allowedByLimit(`fight:poll:${member.id}`, 240, 60_000)) throw new AppError("rate_limited", 429);
+    return fightRun(member, () => null);
+  }
+
+  async function fightOnlineJoin(member: any): Promise<Response> {
+    if (!allowedByLimit(`fight:join:${member.id}`, 30, 60_000)) throw new AppError("rate_limited", 429);
+    return fightRun(member, (state, now) => {
+      joinArena(state, { id: member.id, nickname: member.nickname, look: sanitizeLook(member.avatar?.look) }, now);
+      return null;
+    });
+  }
+
+  async function fightOnlineLeave(member: any): Promise<Response> {
+    if (!allowedByLimit(`fight:join:${member.id}`, 30, 60_000)) throw new AppError("rate_limited", 429);
+    return fightRun(member, (state, now) => {
+      leaveArena(state, member.id, now);
+      return null;
+    });
+  }
+
+  async function fightOnlineMove(request: Request, member: any): Promise<Response> {
+    if (!allowedByLimit(`fight:move:${member.id}`, 120, 60_000)) throw new AppError("rate_limited", 429);
+    const body = await readJson(request, 512);
+    const move = body?.move;
+    return fightRun(member, (state, now, settlements) => {
+      submitMove(state, member.id, move, now, settlements);
+      return null;
+    });
   }
 
   async function adminOverview(member: any): Promise<Response> {
@@ -1030,6 +1299,16 @@ export function application({ db, storage }: { db: Db; storage: Storage }) {
     if (path === "/games/rps" && method === "POST") return await rpsPlay(request, auth.member);
     if (path === "/games/fish" && method === "POST") return await fishCast(auth.member);
     if (path === "/games/fight" && method === "POST") return await fightRecord(request, auth.member);
+    if (path === "/games/poker/state" && method === "GET") return await pokerState(auth.member);
+    if (path === "/games/poker/join" && method === "POST") return await pokerJoin(auth.member);
+    if (path === "/games/poker/leave" && method === "POST") return await pokerLeave(auth.member);
+    if (path === "/games/poker/start" && method === "POST") return await pokerStart(auth.member);
+    if (path === "/games/poker/action" && method === "POST") return await pokerAction(request, auth.member);
+    if (path === "/games/poker/rebuy" && method === "POST") return await pokerRebuy(auth.member);
+    if (path === "/games/fight/online/state" && method === "GET") return await fightOnlineState(auth.member);
+    if (path === "/games/fight/online/join" && method === "POST") return await fightOnlineJoin(auth.member);
+    if (path === "/games/fight/online/leave" && method === "POST") return await fightOnlineLeave(auth.member);
+    if (path === "/games/fight/online/move" && method === "POST") return await fightOnlineMove(request, auth.member);
     if (path === "/fish/dex" && method === "GET") {
       const collection = rows(
         await db.from("fish_collection").select("fish_id,cnt,first_at,last_at").eq("member_id", auth.member.id).limit(50),

@@ -91,9 +91,105 @@ export type FishResult = {
   collection: { fishId: string; count: number }[];
 };
 
-export type RpsResult = { house: "rock" | "paper" | "scissors"; result: "win" | "lose" | "draw" };
+export type RpsResult = {
+  house: "rock" | "paper" | "scissors";
+  result: "win" | "lose" | "draw";
+  opponent?: { id: string; nickname: string };
+};
 
 export type CitySetting = { name: string; lat: number; lon: number };
+
+export type PokerPhase = "waiting" | "preflop" | "flop" | "turn" | "river" | "showdown";
+
+export type PokerSeatView = {
+  seat: number;
+  id: string;
+  nickname: string;
+  chips: number;
+  bet: number;
+  folded: boolean;
+  allIn: boolean;
+  inHand: boolean;
+  acted: boolean;
+  leaving: boolean;
+  lastAction: string;
+  cards: string[];
+};
+
+export type PokerWinner = { seat: number; nickname: string; amount: number; hand: string };
+
+export type PokerTable = {
+  phase: PokerPhase;
+  handNo: number;
+  dealer: number;
+  turn: number;
+  deadline: number;
+  smallBlind: number;
+  bigBlind: number;
+  streetBet: number;
+  pot: number;
+  board: string[];
+  seats: (PokerSeatView | null)[];
+  logs: string[];
+  result: { text: string; winners: PokerWinner[]; total: number } | null;
+  updatedAt: number;
+  serverNow: number;
+  viewer: {
+    seat: number | null;
+    toCall: number;
+    canCheck: boolean;
+    minRaiseTo: number;
+    maxRaiseTo: number;
+    inHand: boolean;
+    leaving: boolean;
+    isTurn: boolean;
+  };
+};
+
+export type FightMoveView = "jab" | "hook" | "block" | "dodge";
+
+export type OnlineFightFighter = {
+  id: string;
+  nickname: string;
+  look: CharacterLook | null;
+  hp: number;
+  submitted: boolean;
+  move: FightMoveView | null;
+  lastMove: FightMoveView | null;
+  dealt: number;
+  taken: number;
+};
+
+export type OnlineFightOutcome = {
+  winnerId: string | null;
+  winnerName: string | null;
+  loserId: string | null;
+  loserName: string | null;
+  rounds: number;
+  walkover: boolean;
+  draw: boolean;
+};
+
+export type OnlineFightLog = { text: string; by: string | null };
+
+export type OnlineFightView = {
+  phase: "waiting" | "fight" | "over";
+  round: number;
+  resolvedRound: number;
+  deadline: number;
+  fighters: OnlineFightFighter[];
+  logs: OnlineFightLog[];
+  over: OnlineFightOutcome | null;
+  updatedAt: number;
+  serverNow: number;
+  viewer: {
+    inside: boolean;
+    seat: number | null;
+    submitted: boolean;
+    move: FightMoveView | null;
+    canMove: boolean;
+  };
+};
 
 export type AdminOverview = {
   members: MemberSummary[];

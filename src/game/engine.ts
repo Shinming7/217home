@@ -2,7 +2,7 @@ import { getCharacterSprite } from "./character";
 import { fallbackLook } from "./looks";
 import { PAL } from "./palette";
 import { createPropCanvas, createRoomCanvas, drawWindow } from "./roomArt";
-import { BOUNDS, OCTAGON, PLAYER_LOOK, PLAYER_START, PROPS, ROOM, SOLIDS, WINDOW } from "./roomData";
+import { BOUNDS, CORKBOARD, OCTAGON, PLAYER_LOOK, PLAYER_START, POKER_TABLE, PROPS, ROOM, SOLIDS, WINDOW } from "./roomData";
 import type { CharacterLook, Dir, PeerInput, Phase, Rect, WalkFrame, WeatherKind } from "./types";
 
 type Point = { x: number; y: number };
@@ -37,6 +37,8 @@ export type RoomEngineOptions = {
   weather?: WeatherKind;
   onSelectMember?: (id: string) => void;
   onEnterCage?: () => void;
+  onOpenPhotos?: () => void;
+  onOpenPoker?: () => void;
 };
 
 const COLS = ROOM.width / ROOM.tile;
@@ -87,6 +89,8 @@ export class RoomEngine {
   private bubble: Bubble | null = null;
   private hoverPeerId: string | null = null;
   private hoverCage = false;
+  private hoverPhotos = false;
+  private hoverPoker = false;
   private raf = 0;
   private last = 0;
   private destroyed = false;
@@ -466,6 +470,20 @@ export class RoomEngine {
     this.drawVignette(ctx);
     this.drawLabels(ctx);
     this.drawBubble(ctx);
+    if (this.hoverPhotos) {
+      ctx.save();
+      ctx.strokeStyle = PAL.lemon;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(CORKBOARD.x - 3.5, CORKBOARD.y - 3.5, CORKBOARD.w + 7, CORKBOARD.h + 7);
+      ctx.restore();
+    }
+    if (this.hoverPoker) {
+      ctx.save();
+      ctx.strokeStyle = PAL.lemon;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(POKER_TABLE.x - 3.5, POKER_TABLE.y - 3.5, POKER_TABLE.w + 7, POKER_TABLE.h + 7);
+      ctx.restore();
+    }
   }
 
   private drawWeather(ctx: CanvasRenderingContext2D, time: number) {
@@ -691,6 +709,26 @@ export class RoomEngine {
     ctx.fillRect(x, y + 2, w, h - 4);
   }
 
+  private roomPoint(clientX: number, clientY: number): { x: number; y: number } {
+    const rect = this.canvas.getBoundingClientRect();
+    const width = this.canvas.offsetWidth || ROOM.width;
+    const height = this.canvas.offsetHeight || ROOM.height;
+    let lx: number;
+    let ly: number;
+    // Phones in portrait run the whole app rotated 90°; the bounding rect swaps
+    // width/height, so client coords must be un-rotated before mapping to room space.
+    if (Math.abs(rect.width - height) < 2 && Math.abs(rect.height - width) < 2) {
+      const dx = clientX - (rect.left + rect.width / 2);
+      const dy = clientY - (rect.top + rect.height / 2);
+      lx = width / 2 + dy;
+      ly = height / 2 - dx;
+    } else {
+      lx = ((clientX - rect.left) / rect.width) * width;
+      ly = ((clientY - rect.top) / rect.height) * height;
+    }
+    return { x: (lx / width) * ROOM.width, y: (ly / height) * ROOM.height };
+  }
+
   private hitPeer(x: number, y: number): Peer | null {
     const sorted = [...this.peers.values()].sort((a, b) => b.y - a.y);
     for (const peer of sorted) {
@@ -705,6 +743,14 @@ export class RoomEngine {
     const nx = (x - cx) / (OCTAGON.w / 2);
     const ny = (y - cy) / (OCTAGON.h / 2);
     return nx * nx + ny * ny <= 0.92;
+  }
+
+  private photoWallAt(x: number, y: number): boolean {
+    return x >= CORKBOARD.x - 4 && x <= CORKBOARD.x + CORKBOARD.w + 4 && y >= CORKBOARD.y - 4 && y <= CORKBOARD.y + CORKBOARD.h + 4;
+  }
+
+  private pokerAt(x: number, y: number): boolean {
+    return x >= POKER_TABLE.x - 4 && x <= POKER_TABLE.x + POKER_TABLE.w + 4 && y >= POKER_TABLE.y - 6 && y <= POKER_TABLE.y + POKER_TABLE.h + 4;
   }
 
   private onKeyDown = (event: KeyboardEvent) => {
@@ -727,28 +773,36 @@ export class RoomEngine {
   };
 
   private onMouseMove = (event: MouseEvent) => {
-    const rect = this.canvas.getBoundingClientRect();
-    const x = ((event.clientX - rect.left) / rect.width) * ROOM.width;
-    const y = ((event.clientY - rect.top) / rect.height) * ROOM.height;
+    const { x, y } = this.roomPoint(event.clientX, event.clientY);
     const peer = this.hitPeer(x, y);
     this.hoverPeerId = peer ? peer.id : null;
     this.hoverCage = !peer && this.cageAt(x, y);
-    this.canvas.style.cursor = peer || this.hoverCage ? "pointer" : "default";
+    this.hoverPhotos = !peer && this.photoWallAt(x, y);
+    this.hoverPoker = !peer && !this.hoverPhotos && this.pokerAt(x, y);
+    this.canvas.style.cursor = peer || this.hoverCage || this.hoverPhotos || this.hoverPoker ? "pointer" : "default";
   };
 
   private onMouseLeave = () => {
     this.hoverPeerId = null;
     this.hoverCage = false;
+    this.hoverPhotos = false;
+    this.hoverPoker = false;
     this.canvas.style.cursor = "default";
   };
 
   private onClick = (event: MouseEvent) => {
-    const rect = this.canvas.getBoundingClientRect();
-    const x = ((event.clientX - rect.left) / rect.width) * ROOM.width;
-    const y = ((event.clientY - rect.top) / rect.height) * ROOM.height;
+    const { x, y } = this.roomPoint(event.clientX, event.clientY);
     const peer = this.hitPeer(x, y);
     if (peer) {
       this.opts.onSelectMember?.(peer.id);
+      return;
+    }
+    if (this.photoWallAt(x, y)) {
+      this.opts.onOpenPhotos?.();
+      return;
+    }
+    if (this.pokerAt(x, y)) {
+      this.opts.onOpenPoker?.();
       return;
     }
     if (this.cageAt(x, y)) this.opts.onEnterCage?.();

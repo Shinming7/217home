@@ -12,6 +12,13 @@ export type PreparedPhoto = {
 
 const MAX_EDGE = 1280;
 const TARGET_BYTES = 820_000;
+const LIMIT_BYTES = 900_000;
+
+export type PreparePhotoOptions = {
+  maxEdge?: number;
+  targetBytes?: number;
+  limitBytes?: number;
+};
 
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -36,13 +43,16 @@ function canvasToBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob>
   });
 }
 
-export async function preparePhoto(file: File): Promise<PreparedPhoto> {
+export async function preparePhoto(file: File, options: PreparePhotoOptions = {}): Promise<PreparedPhoto> {
+  const maxEdge = options.maxEdge ?? MAX_EDGE;
+  const targetBytes = options.targetBytes ?? TARGET_BYTES;
+  const limitBytes = options.limitBytes ?? LIMIT_BYTES;
   if (!/^image\/(jpeg|png|webp|heic|heif)$/.test(file.type)) throw new Error("invalid_photo");
   if (file.size > 20 * 1024 * 1024) throw new Error("photo_too_large");
 
   const bitmap = await createImageBitmap(file);
   try {
-    const scale = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+    const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
     const width = Math.max(1, Math.round(bitmap.width * scale));
     const height = Math.max(1, Math.round(bitmap.height * scale));
     const canvas = document.createElement("canvas");
@@ -56,11 +66,11 @@ export async function preparePhoto(file: File): Promise<PreparedPhoto> {
 
     let quality = 0.84;
     let blob = await canvasToBlob(canvas, quality);
-    while (blob.size > TARGET_BYTES && quality > 0.42) {
+    while (blob.size > targetBytes && quality > 0.42) {
       quality -= 0.08;
       blob = await canvasToBlob(canvas, quality);
     }
-    if (blob.size > 900_000) throw new Error("photo_too_large");
+    if (blob.size > limitBytes) throw new Error("photo_too_large");
 
     const origBase64 = await blobToBase64(blob);
     const pixel = await pixelateBitmap(bitmap);

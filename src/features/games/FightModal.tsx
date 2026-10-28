@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getCharacterSprite } from "../../game/character";
 import { fallbackLook } from "../../game/looks";
 import { PixelPortrait } from "../../ui/PixelPortrait";
-import type { CharacterLook, Dir } from "../../game/types";
+import { FighterCanvas } from "./FighterCanvas";
+import { OnlineFight } from "./OnlineFight";
+import type { CharacterLook } from "../../game/types";
 
 type Move = "jab" | "hook" | "block" | "dodge";
 type Stage = "select" | "fight" | "over";
+type FightMode = "mode" | "ai" | "online";
 type Outcome = "win" | "lose" | "draw";
 type LogTone = "you" | "foe" | "system";
 type LogEntry = { id: number; text: string; tone: LogTone };
@@ -84,23 +86,9 @@ function aiChoose(foeHp: number, playerHp: number): Move {
   return "dodge";
 }
 
-function FighterCanvas({ look, dir }: { look: CharacterLook; dir: Dir }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = ref.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.imageSmoothingEnabled = false;
-    ctx.clearRect(0, 0, 48, 72);
-    ctx.drawImage(getCharacterSprite(look, dir, "idle"), 0, 0, 16, 24, 0, 0, 48, 72);
-  }, [look, dir]);
-
-  return <canvas ref={ref} width={48} height={72} aria-hidden="true" />;
-}
-
 export function FightModal({ self, opponents, initialFoeId, onClose, onResult }: FightModalProps) {
+  const [mode, setMode] = useState<FightMode>(initialFoeId ? "ai" : "mode");
+  const [onlineInside, setOnlineInside] = useState(false);
   const [stage, setStage] = useState<Stage>("select");
   const [foeId, setFoeId] = useState<string | null>(null);
   const [youHp, setYouHp] = useState(100);
@@ -163,9 +151,14 @@ export function FightModal({ self, opponents, initialFoeId, onClose, onResult }:
     if (el) el.scrollTop = el.scrollHeight;
   }, [log]);
 
+  const onlineInsideRef = useRef(false);
+  useEffect(() => {
+    onlineInsideRef.current = onlineInside;
+  }, [onlineInside]);
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape" && !onlineInsideRef.current) onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -303,16 +296,52 @@ export function FightModal({ self, opponents, initialFoeId, onClose, onResult }:
           <div>
             <span className="profile-kicker">OCTAGON · 217</span>
             <h2 className="fight-title">
-              {stage === "select" ? "八角笼 · 挑个对手" : foe ? `八角笼 · 对战${foe.nickname}` : "八角笼"}
+              {mode === "mode"
+                ? "八角笼 · 挑个玩法"
+                : mode === "online"
+                  ? "八角笼 · 联机对打"
+                  : stage === "select"
+                    ? "八角笼 · 挑个对手"
+                    : foe
+                      ? `八角笼 · 对战${foe.nickname}`
+                      : "八角笼"}
             </h2>
           </div>
-          <button className="icon-btn" onClick={onClose} aria-label="离开八角笼">
-            ×
-          </button>
+          {mode === "online" && onlineInside ? null : (
+            <button className="icon-btn" onClick={onClose} aria-label="离开八角笼">
+              ×
+            </button>
+          )}
         </header>
 
-        {stage === "select" || !foe ? (
+        {mode === "mode" ? (
+          <div className="fight-modes">
+            <button className="fight-mode-card" onClick={() => setMode("ai")}>
+              <span className="fight-mode-badge">1P</span>
+              <span className="fight-mode-name">人机对打</span>
+              <span className="fight-mode-desc">挑一位住户的影子当对手，由电脑接招，随时开打。</span>
+              <span className="fight-mode-cta">选对手</span>
+            </button>
+            <button className="fight-mode-card online" onClick={() => setMode("online")}>
+              <span className="fight-mode-badge">2P</span>
+              <span className="fight-mode-name">联机对打</span>
+              <span className="fight-mode-desc">走进八角笼等另一位住户，对方一进来就开打。</span>
+              <span className="fight-mode-cta">进笼子</span>
+            </button>
+            <p className="fight-note">联机是两位住户实时对拳 · 人机随时能练手</p>
+          </div>
+        ) : mode === "online" ? (
+          <OnlineFight
+            self={self}
+            onBack={() => setMode("mode")}
+            onClose={onClose}
+            onInsideChange={setOnlineInside}
+          />
+        ) : stage === "select" || !foe ? (
           <div className="fight-select">
+            <button className="fight-back" onClick={() => setMode("mode")}>
+              ← 换个玩法
+            </button>
             {opponents.length === 0 ? (
               <div className="empty-state">
                 <p>屋里还没有别的住户可以切磋。</p>
@@ -401,7 +430,7 @@ export function FightModal({ self, opponents, initialFoeId, onClose, onResult }:
           </div>
         )}
 
-        {stage === "over" && result && foe ? (
+        {mode === "ai" && stage === "over" && result && foe ? (
           <div className="fight-result" role="status">
             <p className="fight-result-kicker">
               ROUND {Math.max(1, round - 1)} · {RESULT_COPY[result].kicker}

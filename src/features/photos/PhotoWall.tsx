@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { api, errorText } from "../../net/api";
 import type { PhotoItem } from "../../net/types";
 import { Panel } from "../../ui/Panel";
 import { preparePhoto, type PreparedPhoto } from "../../pixel/photo";
+
+const WALL_LIMIT = 30;
+const PHOTO_OPTIONS = { maxEdge: 1920, targetBytes: 1_900_000, limitBytes: 2 * 1024 * 1024 };
 
 const urlCache = new Map<string, { url: string; expiresAt: number }>();
 
@@ -39,6 +42,7 @@ export function PhotoWall({ isOwner, onClose, onChanged }: PhotoWallProps) {
   const [view, setView] = useState<{ photo: PhotoItem; url: string } | null>(null);
   const [viewBusy, setViewBusy] = useState(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [tilt, setTilt] = useState({ x: 0, y: 0 });
   const fileRef = useRef<HTMLInputElement>(null);
   const confirmTimer = useRef(0);
 
@@ -73,10 +77,14 @@ export function PhotoWall({ isOwner, onClose, onChanged }: PhotoWallProps) {
 
   const pickFile = async (file: File | undefined) => {
     if (!file) return;
+    if (photos.length >= WALL_LIMIT) {
+      setError("这面墙最多挂 30 张照片，先取下一张吧");
+      return;
+    }
     setPreparing(true);
     setError("");
     try {
-      const prepared = await preparePhoto(file);
+      const prepared = await preparePhoto(file, PHOTO_OPTIONS);
       setPending(prepared);
       setCaption("");
     } catch (caught) {
@@ -129,6 +137,7 @@ export function PhotoWall({ isOwner, onClose, onChanged }: PhotoWallProps) {
         try {
           await api.adminDeletePhoto(id);
           setPhotos((current) => current.filter((photo) => photo.id !== id));
+          setView((current) => (current?.photo.id === id ? null : current));
           onChanged();
         } catch (caught) {
           setError(errorText(caught));
@@ -141,23 +150,35 @@ export function PhotoWall({ isOwner, onClose, onChanged }: PhotoWallProps) {
     confirmTimer.current = window.setTimeout(() => setConfirmId(null), 4000);
   };
 
+  const filled = photos.length >= WALL_LIMIT;
+
   return (
     <Panel kicker="PHOTO WALL · 217" title="照片墙" wide onClose={onClose}>
-      <div className="panel-toolbar">
-        <div>
-          <p className="panel-note">原图只有屋里的住户能看到，像素版会挂在软木板上。</p>
+      <div className="pw-toolbar">
+        <p className="panel-note">
+          站到软木板前，用第一人称看看大家挂上去的像素小画。点开任意一张，就能看到没打码的原图。
+        </p>
+        <div className="pw-toolbar-actions">
+          <span className={filled ? "pw-count full" : "pw-count"}>
+            {photos.length} / {WALL_LIMIT}
+          </span>
+          <button
+            className="pixel-btn primary"
+            onClick={() => fileRef.current?.click()}
+            disabled={preparing || uploading || filled}
+          >
+            {preparing ? "正在裁成像素…" : filled ? "墙上已满 30 张" : "挂一张新照片"}
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+            hidden
+            onChange={(event) => void pickFile(event.target.files?.[0])}
+          />
         </div>
-        <button className="pixel-btn primary" onClick={() => fileRef.current?.click()} disabled={preparing || uploading}>
-          {preparing ? "正在裁成像素…" : "挂一张新照片"}
-        </button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
-          hidden
-          onChange={(event) => void pickFile(event.target.files?.[0])}
-        />
       </div>
+      <p className="fineprint pw-limit-note">单张照片上限 2MB，像素原图只有屋里的住户能看到。</p>
 
       {pending ? (
         <div className="upload-sheet">
@@ -167,7 +188,9 @@ export function PhotoWall({ isOwner, onClose, onChanged }: PhotoWallProps) {
           </div>
           <div className="upload-fields">
             <label className="field">
-              <span>配一句话 <em>可不填</em></span>
+              <span>
+                配一句话 <em>可不填</em>
+              </span>
               <input
                 className="text-input"
                 value={caption}
@@ -188,44 +211,61 @@ export function PhotoWall({ isOwner, onClose, onChanged }: PhotoWallProps) {
         </div>
       ) : null}
 
-      {error ? <p className="form-error" role="alert">{error}</p> : null}
-      {loading ? <p className="panel-note">正在翻照片……</p> : null}
+      {error ? (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+
+      <div
+        className="pw-scene"
+        onPointerMove={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          const nx = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+          const ny = ((event.clientY - rect.top) / rect.height) * 2 - 1;
+          setTilt({ x: -ny * 1.5, y: nx * 2.2 });
+        }}
+        onPointerLeave={() => setTilt({ x: 0, y: 0 })}
+      >
+        <div className="pw-wall" style={{ transform: `rotateX(${tilt.x}deg) rotateY(${tilt.y}deg)` }}>
+          <div className="pw-board">
+            <span className="pw-board-tape" aria-hidden="true" />
+            <div className="pw-grid">
+              {Array.from({ length: WALL_LIMIT }, (_, index) => {
+                const photo = photos[index];
+                if (!photo) {
+                  return <span key={`empty-${index}`} className="pw-slot empty" aria-hidden="true" />;
+                }
+                const label = photo.caption || `${photo.author.nickname}的照片`;
+                return (
+                  <button
+                    key={photo.id}
+                    className="pw-slot filled"
+                    style={{ "--slot-tilt": `${((index * 7) % 5) - 2}deg` } as CSSProperties}
+                    onClick={() => void openView(photo)}
+                    title={`${label} · 点开看原图`}
+                    aria-label={`查看${label}的原图`}
+                  >
+                    {urls[photo.id] ? <img src={urls[photo.id]} alt={label} loading="lazy" /> : <span className="pw-slot-load">···</span>}
+                    <span className="pw-pin" aria-hidden="true" />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+        <div className="pw-vignette" aria-hidden="true" />
+        <div className="pw-hud">
+          <span>{loading ? "正在走向照片墙…" : "第一人称 · 站在软木板前"}</span>
+          <span>
+            {photos.length} / {WALL_LIMIT} 张
+          </span>
+        </div>
+      </div>
 
       {!loading && photos.length === 0 ? (
-        <div className="empty-state">
-          <p>墙上还是空的。</p>
-          <p className="fineprint">上传第一张照片，把它变成像素小画挂在这里。</p>
-        </div>
-      ) : (
-        <div className="photo-grid">
-          {photos.map((photo) => (
-            <figure key={photo.id} className="photo-card">
-              <button className="photo-thumb" onClick={() => void openView(photo)} aria-label={`查看${photo.caption || "照片"}原图`}>
-                {urls[photo.id] ? (
-                  <img src={urls[photo.id]} alt={photo.caption || `${photo.author.nickname}的照片`} loading="lazy" />
-                ) : (
-                  <span className="photo-placeholder">载入中</span>
-                )}
-              </button>
-              <figcaption>
-                <span className="photo-caption">{photo.caption || "没有配文"}</span>
-                <span className="photo-meta">
-                  {photo.author.nickname} · {dateLabel(photo.createdAt)}
-                </span>
-              </figcaption>
-              {isOwner ? (
-                <button
-                  className={confirmId === photo.id ? "card-delete armed" : "card-delete"}
-                  onClick={() => askDelete(photo.id)}
-                  aria-label="删除照片"
-                >
-                  {confirmId === photo.id ? "再点一次" : "×"}
-                </button>
-              ) : null}
-            </figure>
-          ))}
-        </div>
-      )}
+        <p className="pw-empty-note">墙上还是空的，挂上第一张照片，让它变成像素小画。</p>
+      ) : null}
 
       {view ? (
         <div
@@ -237,10 +277,20 @@ export function PhotoWall({ isOwner, onClose, onChanged }: PhotoWallProps) {
           <div className="lightbox-frame">
             <img src={view.url} alt={view.photo.caption || `${view.photo.author.nickname}的照片`} />
             <div className="lightbox-meta">
-              <p>{view.photo.caption || "没有配文"}</p>
-              <span>
-                {view.photo.author.nickname} · {dateLabel(view.photo.createdAt)}
-              </span>
+              <div>
+                <p>{view.photo.caption || "没有配文"}</p>
+                <span>
+                  {view.photo.author.nickname} · {dateLabel(view.photo.createdAt)} · 原图
+                </span>
+              </div>
+              {isOwner ? (
+                <button
+                  className={confirmId === view.photo.id ? "pixel-btn danger armed" : "pixel-btn"}
+                  onClick={() => askDelete(view.photo.id)}
+                >
+                  {confirmId === view.photo.id ? "再点一次确认取下" : "取下这张"}
+                </button>
+              ) : null}
             </div>
             <button className="icon-btn lightbox-close" onClick={() => setView(null)} aria-label="关闭大图">
               ×
