@@ -92,6 +92,10 @@ CI 会对每次 push 与 PR 执行同样的两项检查。
 
 每个里程碑的改动、数据影响与验证方式见 [CHANGELOG.md](./CHANGELOG.md)。
 
+## 规划与评估
+
+长期功能的可行性与成本评估放在 `docs/`，例如 [微信小程序与游戏内语音可行性评估](./docs/feasibility-wechat-voice.md)。
+
 ## 开源协议
 
 [MIT](./LICENSE)
