@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errorText } from "../../net/api";
-import type { AdminOverview, MessageItem, PhotoItem, WeatherKind } from "../../net/types";
+import type { AdminOverview, MessageItem, PhotoItem, SelfMember, WeatherKind } from "../../net/types";
 import { Panel } from "../../ui/Panel";
 
 const CITIES = [
@@ -32,9 +32,10 @@ type AdminPanelProps = {
   onClose: () => void;
   onChanged: () => void;
   onLogout: () => void;
+  onAbdicated: (member: SelfMember) => void;
 };
 
-export function AdminPanel({ onClose, onChanged, onLogout }: AdminPanelProps) {
+export function AdminPanel({ onClose, onChanged, onLogout, onAbdicated }: AdminPanelProps) {
   const [tab, setTab] = useState<Tab>("members");
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [messages, setMessages] = useState<MessageItem[]>([]);
@@ -47,6 +48,8 @@ export function AdminPanel({ onClose, onChanged, onLogout }: AdminPanelProps) {
   const [weather, setWeather] = useState<WeatherKind | "">("");
   const [passcode, setPasscode] = useState("");
   const [passcodeAgain, setPasscodeAgain] = useState("");
+  const [ownerKey, setOwnerKey] = useState("");
+  const [ownerKeyAgain, setOwnerKeyAgain] = useState("");
   const [quitArmed, setQuitArmed] = useState(false);
   const timer = useRef(0);
 
@@ -180,6 +183,40 @@ export function AdminPanel({ onClose, onChanged, onLogout }: AdminPanelProps) {
     }
   };
 
+  const rotateOwnerKey = async () => {
+    if (!/^\d{4}$/.test(ownerKey)) {
+      setError("站长密匙需要 4 位数字");
+      return;
+    }
+    if (ownerKey !== ownerKeyAgain) {
+      setError("两次输入的站长密匙不一样");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await api.adminSettings({ newOwnerKey: ownerKey });
+      setOwnerKey("");
+      setOwnerKeyAgain("");
+      setOverview((current) => (current ? { ...current, ownerKeyIsDefault: false } : current));
+      flash("站长密匙已更新，退位后请把新密匙告诉下一位站长。");
+    } catch (caught) {
+      setError(errorText(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const abdicate = () =>
+    arm("abdicate", async () => {
+      try {
+        const { member } = await api.abdicateOwner();
+        onAbdicated(member);
+      } catch (caught) {
+        setError(errorText(caught));
+      }
+    });
+
   return (
     <Panel kicker="OWNER PANEL · 217" title="站长管理" wide onClose={onClose}>
       <div className="tabs" role="tablist" aria-label="管理分类">
@@ -203,6 +240,11 @@ export function AdminPanel({ onClose, onChanged, onLogout }: AdminPanelProps) {
       {overview?.passcodeIsDefault ? (
         <p className="admin-banner">
           当前还是初始暗号 <strong>217217</strong>，建议在「房间设置」里改成只有朋友知道的暗号。
+        </p>
+      ) : null}
+      {overview?.ownerKeyIsDefault ? (
+        <p className="admin-banner">
+          当前还是初始站长密匙 <strong>0217</strong>，建议在「房间设置」里改掉。
         </p>
       ) : null}
       {error ? <p className="form-error" role="alert">{error}</p> : null}
@@ -333,6 +375,42 @@ export function AdminPanel({ onClose, onChanged, onLogout }: AdminPanelProps) {
             </label>
             <button className="pixel-btn primary" onClick={() => void rotatePasscode()} disabled={busy}>
               {busy ? "正在换锁…" : "更新暗号"}
+            </button>
+
+            <h3 className="admin-subtitle">站长密匙</h3>
+            <p className="fineprint">4 位数字。退位后，下一位站长需要用新密匙上任；不要和房间暗号写成一样。</p>
+            <label className="field">
+              <span>新站长密匙</span>
+              <input
+                className="text-input"
+                type="password"
+                inputMode="numeric"
+                maxLength={4}
+                value={ownerKey}
+                onChange={(event) => setOwnerKey(event.target.value.replace(/\D/g, "").slice(0, 4))}
+                autoComplete="new-password"
+              />
+            </label>
+            <label className="field">
+              <span>再输一次</span>
+              <input
+                className="text-input"
+                type="password"
+                inputMode="numeric"
+                maxLength={4}
+                value={ownerKeyAgain}
+                onChange={(event) => setOwnerKeyAgain(event.target.value.replace(/\D/g, "").slice(0, 4))}
+                autoComplete="new-password"
+              />
+            </label>
+            <button className="pixel-btn primary" onClick={() => void rotateOwnerKey()} disabled={busy}>
+              {busy ? "正在换密匙…" : "更新站长密匙"}
+            </button>
+
+            <h3 className="admin-subtitle">站长身份</h3>
+            <p className="fineprint">退位后你会变回普通住户，其他知道密匙的人可以接任；同一时间只有一位站长。</p>
+            <button className={confirm === "abdicate" ? "danger-btn armed" : "danger-btn"} onClick={abdicate} disabled={busy}>
+              {confirm === "abdicate" ? "再点一次确认退位" : "退位"}
             </button>
 
             <h3 className="admin-subtitle">离开</h3>

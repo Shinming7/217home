@@ -102,8 +102,14 @@ export const api = {
     request<{ fight: OnlineFightView }>("/games/fight/online/move", post({ move })),
   weather: () => request<WeatherInfo>("/weather"),
   adminOverview: () => request<AdminOverview>("/admin/overview"),
-  adminSettings: (body: { city?: CitySetting; weatherOverride?: WeatherKind | null; newPasscode?: string }) =>
-    request<{ ok: true }>("/admin/settings", patch(body)),
+  claimOwner: (key: string) => request<{ member: SelfMember }>("/admin/claim", post({ key })),
+  abdicateOwner: () => request<{ member: SelfMember }>("/admin/abdicate", { method: "POST" }),
+  adminSettings: (body: {
+    city?: CitySetting;
+    weatherOverride?: WeatherKind | null;
+    newPasscode?: string;
+    newOwnerKey?: string;
+  }) => request<{ ok: true }>("/admin/settings", patch(body)),
   adminDeleteMessage: (id: string) =>
     request<{ ok: true }>(`/admin/messages/${id}`, { method: "DELETE" }),
   adminDeletePhoto: (id: string) => request<{ ok: true }>(`/admin/photos/${id}`, { method: "DELETE" }),
@@ -151,6 +157,8 @@ export const ERROR_TEXT: Record<string, string> = {
   fight_inactive: "现在还不能出招",
   cannot_remove_self: "不能把自己移出房间",
   cannot_remove_owner: "不能移出站长",
+  owner_exists: "屋里已经有站长了，等现任站长退位后再来",
+  invalid_owner_key: "站长密匙不对，需要 4 位数字",
   limiter_busy: "手速太快，稍等片刻",
   service_unavailable: "小屋服务暂时打盹了",
 };

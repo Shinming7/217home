@@ -123,7 +123,7 @@ export function JoinScreen({ notice, onJoined }: JoinScreenProps) {
         </form>
 
         <p className="gate-fine">
-          个人密码加盐保存在服务器上，只用来认出你；房间暗号只给屋里的人。第一位进屋的人会成为站长。
+          个人密码加盐保存在服务器上，只用来认出你；房间暗号只给屋里的人。想当站长需要 4 位站长密匙，同一时间只有一位站长。
         </p>
       </section>
     </div>

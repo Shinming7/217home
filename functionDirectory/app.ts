@@ -32,6 +32,7 @@ import {
 } from "./fight.ts";
 
 const DEFAULT_PASSCODE = "217217";
+const DEFAULT_OWNER_KEY = "0217";
 const ROOM_BOUNDS = { minX: 0, maxX: 384, minY: 0, maxY: 256 };
 const ONLINE_WINDOW_MS = 12_000;
 const PHOTO_ORIG_MAX = 2 * 1024 * 1024;
@@ -285,19 +286,27 @@ export function application({ db, storage }: { db: Db; storage: Storage }) {
     }
   }
 
-  async function ensurePasscodeSetting(): Promise<PasscodeRecord> {
-    const existing = await readSetting("passcode");
+  async function ensureHashedSetting(key: string, fallback: string): Promise<PasscodeRecord> {
+    const existing = await readSetting(key);
     if (existing && typeof existing.hash === "string") return existing as PasscodeRecord;
-    const record = await hashPasscode(DEFAULT_PASSCODE);
+    const record = await hashPasscode(fallback);
     const inserted = rows(
       await db.from("settings")
-        .insertIfAbsent({ key: "passcode", value: record, updated_at: iso() }, { onConflict: "key" })
+        .insertIfAbsent({ key, value: record, updated_at: iso() }, { onConflict: "key" })
         .select("key"),
     );
     if (inserted.length) return record;
-    const again = await readSetting("passcode");
+    const again = await readSetting(key);
     if (!again || typeof again.hash !== "string") throw new AppError("settings_unavailable", 503);
     return again as PasscodeRecord;
+  }
+
+  async function ensurePasscodeSetting(): Promise<PasscodeRecord> {
+    return await ensureHashedSetting("passcode", DEFAULT_PASSCODE);
+  }
+
+  async function ensureOwnerKeySetting(): Promise<PasscodeRecord> {
+    return await ensureHashedSetting("owner_key", DEFAULT_OWNER_KEY);
   }
 
   async function requireMember(request: Request): Promise<{ member: any; session: any }> {
@@ -549,24 +558,11 @@ export function application({ db, storage }: { db: Db; storage: Storage }) {
         })
         .select("id"),
     );
-    const claim = rows(
-      await db.from("settings")
-        .insertIfAbsent(
-          { key: "owner_id", value: { id }, updated_at: iso() },
-          { onConflict: "key" },
-        )
-        .select("key"),
-    );
-    let role = "member";
-    if (claim.length) {
-      role = "owner";
-      rows(await db.from("members").update({ role }).eq("id", id).select("id"));
-    }
     const token = await issueSession(id);
     const member = {
       id,
       nickname,
-      role,
+      role: "member",
       avatar: null,
       cosmetics: null,
       intro: "",
@@ -1182,6 +1178,71 @@ export function application({ db, storage }: { db: Db; storage: Storage }) {
     });
   }
 
+  async function currentOwner(): Promise<any | null> {
+    const list = rows(
+      await db.from("members").select("id,nickname,role").eq("role", "owner").limit(1),
+    );
+    return list[0] ?? null;
+  }
+
+  async function claimOwner(request: Request, member: any): Promise<Response> {
+    if (!allowedByLimit(`owner-claim:${member.id}`, 6, 10 * 60_000) || !allowedByLimit("owner-claim:global", 30, 10 * 60_000)) {
+      throw new AppError("rate_limited", 429);
+    }
+    const body = await readJson(request, 1024);
+    const key = typeof body?.key === "string" ? body.key.trim() : "";
+    if (!/^\d{4}$/.test(key)) throw new AppError("invalid_owner_key", 400);
+    const record = await ensureOwnerKeySetting();
+    if (!(await verifyPasscode(key, record))) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      throw new AppError("invalid_owner_key", 401);
+    }
+    if (member.role === "owner") {
+      return json({ member: publicMember(member, { self: true }) });
+    }
+    if (await currentOwner()) throw new AppError("owner_exists", 409);
+
+    // owner_id 是上任的原子锁：先清掉没有站长身份的旧记录，再抢占。
+    const claimSetting = rows(
+      await db.from("settings").select("key,value").eq("key", "owner_id").limit(1),
+    );
+    if (claimSetting.length && claimSetting[0].value?.id !== member.id) {
+      rows(await db.from("settings").delete().eq("key", "owner_id").select("key"));
+    }
+    const inserted = rows(
+      await db.from("settings")
+        .insertIfAbsent({ key: "owner_id", value: { id: member.id }, updated_at: iso() }, { onConflict: "key" })
+        .select("key"),
+    );
+    if (!inserted.length) {
+      const again = await readSetting("owner_id");
+      if (again?.id !== member.id) throw new AppError("owner_exists", 409);
+    }
+    rows(await db.from("members").update({ role: "member" }).eq("role", "owner").select("id"));
+    rows(await db.from("members").update({ role: "owner" }).eq("id", member.id).select("id"));
+    const refreshed = rows(
+      await db.from("members")
+        .select("id,nickname,role,avatar,cosmetics,intro,tags,last_x,last_y,last_dir,last_seen,created_at")
+        .eq("id", member.id)
+        .limit(1),
+    );
+    return json({ member: publicMember(refreshed[0] ?? { ...member, role: "owner" }, { self: true }) });
+  }
+
+  async function abdicateOwner(member: any): Promise<Response> {
+    requireOwner(member);
+    rows(await db.from("members").update({ role: "member" }).eq("id", member.id).select("id"));
+    rows(await db.from("members").update({ role: "member" }).eq("role", "owner").select("id"));
+    rows(await db.from("settings").delete().eq("key", "owner_id").select("key"));
+    const refreshed = rows(
+      await db.from("members")
+        .select("id,nickname,role,avatar,cosmetics,intro,tags,last_x,last_y,last_dir,last_seen,created_at")
+        .eq("id", member.id)
+        .limit(1),
+    );
+    return json({ member: publicMember(refreshed[0] ?? { ...member, role: "member" }, { self: true }) });
+  }
+
   async function adminOverview(member: any): Promise<Response> {
     requireOwner(member);
     const members = await allMembers(100);
@@ -1190,6 +1251,7 @@ export function application({ db, storage }: { db: Db; storage: Storage }) {
     const photos = rows(await db.from("photos").select("id").limit(1000));
     const room = roomSettings(await readSetting("room"));
     const passcode = await ensurePasscodeSetting();
+    const ownerKey = await ensureOwnerKeySetting();
     return json({
       members: members.map((row) => summaryMember(row, now)),
       messageCount: messages.length,
@@ -1197,6 +1259,7 @@ export function application({ db, storage }: { db: Db; storage: Storage }) {
       city: room.city,
       weatherOverride: room.weatherOverride,
       passcodeIsDefault: await verifyPasscode(DEFAULT_PASSCODE, passcode),
+      ownerKeyIsDefault: await verifyPasscode(DEFAULT_OWNER_KEY, ownerKey),
     });
   }
 
@@ -1240,6 +1303,12 @@ export function application({ db, storage }: { db: Db; storage: Storage }) {
       if (!updated.length) {
         await writeSetting("passcode", record);
       }
+      changed = true;
+    }
+    if (body?.newOwnerKey != null) {
+      const ownerKey = typeof body.newOwnerKey === "string" ? body.newOwnerKey.trim() : "";
+      if (!/^\d{4}$/.test(ownerKey)) throw new AppError("invalid_owner_key", 400);
+      await writeSetting("owner_key", await hashPasscode(ownerKey));
       changed = true;
     }
     if (!changed) throw new AppError("invalid_input", 400);
@@ -1365,6 +1434,8 @@ export function application({ db, storage }: { db: Db; storage: Storage }) {
         })),
       });
     }
+    if (path === "/admin/claim" && method === "POST") return await claimOwner(request, auth.member);
+    if (path === "/admin/abdicate" && method === "POST") return await abdicateOwner(auth.member);
     if (path === "/admin/overview" && method === "GET") return await adminOverview(auth.member);
     if (path === "/admin/settings" && method === "PATCH") return await adminSettings(request, auth.member);
     const adminMessage = path.match(/^\/admin\/messages\/([0-9a-f-]{36})$/);

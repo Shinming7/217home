@@ -10,6 +10,7 @@ import { RpsModal } from "./features/games/RpsModal";
 import { FishModal } from "./features/games/FishModal";
 import { PokerModal } from "./features/games/PokerModal";
 import { AdminPanel } from "./features/admin/AdminPanel";
+import { OwnerClaim } from "./features/admin/OwnerClaim";
 import { api, ApiError, errorText, setAuthToken } from "./net/api";
 import { clearStoredSession, loadStoredSession, saveStoredSession } from "./net/session";
 import { usePresence } from "./net/presence";
@@ -50,6 +51,7 @@ export default function App() {
   const [panel, setPanel] = useState<PanelKind | null>(null);
   const [fightOpen, setFightOpen] = useState(false);
   const [fightFoeId, setFightFoeId] = useState<string | null>(null);
+  const [ownerClaimOpen, setOwnerClaimOpen] = useState(false);
   const [toast, setToast] = useState("");
   const [toastWarn, setToastWarn] = useState(false);
   const [quitArmed, setQuitArmed] = useState(false);
@@ -109,6 +111,7 @@ export default function App() {
     setSelected(null);
     setPanel(null);
     setFightOpen(false);
+    setOwnerClaimOpen(false);
     setStage("join");
     setNotice("登录已经失效，请用名字和个人密码重新进屋。");
   }, []);
@@ -201,8 +204,15 @@ export default function App() {
 
   const phase: Phase = presence?.phase ?? "dusk";
   const weather: WeatherKind = presence?.weather.kind ?? "clear";
-  const paused = Boolean(selected) || fightOpen || panel !== null;
+  const paused = Boolean(selected) || fightOpen || panel !== null || ownerClaimOpen;
   const forcedLandscape = useForcedLandscape(stage === "room");
+  const ownerExists = self?.role === "owner" || members.some((member) => member.role === "owner");
+
+  const applySelf = useCallback((member: SelfMember) => {
+    setSelf(member);
+    const stored = loadStoredSession();
+    if (stored) saveStoredSession({ token: stored.token, member });
+  }, []);
 
   const handleJoined = (result: JoinResult) => {
     setAuthToken(result.token);
@@ -274,6 +284,7 @@ export default function App() {
     setSelected(null);
     setPanel(null);
     setFightOpen(false);
+    setOwnerClaimOpen(false);
     setStage("join");
     setNotice("已经离开小屋，下次用名字和个人密码回来。");
     setQuitArmed(false);
@@ -386,6 +397,13 @@ export default function App() {
           <button className={panel === "admin" ? "dock-btn active" : "dock-btn"} onClick={() => setPanel("admin")}>
             站长
           </button>
+        ) : !ownerExists ? (
+          <button
+            className={ownerClaimOpen ? "dock-btn active" : "dock-btn"}
+            onClick={() => setOwnerClaimOpen(true)}
+          >
+            站长上任
+          </button>
         ) : null}
         <button className={quitArmed ? "dock-btn quit armed" : "dock-btn quit"} onClick={askQuit}>
           {quitArmed ? "再点一次离开" : "离开"}
@@ -457,6 +475,26 @@ export default function App() {
           onClose={() => setPanel(null)}
           onChanged={() => void refreshMembers()}
           onLogout={() => void logout()}
+          onAbdicated={(member) => {
+            applySelf(member);
+            setPanel(null);
+            notify("你已经退位，屋里暂时没有站长了");
+            void refreshMembers();
+          }}
+        />
+      ) : null}
+      {ownerClaimOpen && self.role !== "owner" && !ownerExists ? (
+        <OwnerClaim
+          onClose={() => {
+            setOwnerClaimOpen(false);
+            void refreshMembers();
+          }}
+          onClaimed={(member) => {
+            applySelf(member);
+            setOwnerClaimOpen(false);
+            notify("你现在是站长了，去站长面板看看吧");
+            void refreshMembers();
+          }}
         />
       ) : null}
 

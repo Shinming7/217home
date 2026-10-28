@@ -198,6 +198,7 @@ export type AdminOverview = {
   city: CitySetting;
   weatherOverride: WeatherKind | null;
   passcodeIsDefault: boolean;
+  ownerKeyIsDefault: boolean;
 };
 
 export type JoinResult = { token: string; member: SelfMember };
