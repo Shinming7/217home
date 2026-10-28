@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RoomCanvas } from "./features/room/RoomCanvas";
+import { OnlineList, type OnlineResident } from "./features/room/OnlineList";
 import { ProfileCard } from "./features/profile/ProfileCard";
 import { FightModal, type Fighter } from "./features/games/FightModal";
 import { JoinScreen } from "./features/join/JoinScreen";
@@ -194,6 +195,14 @@ export default function App() {
     }));
   }, [presence, members]);
 
+  const onlineResidents = useMemo<OnlineResident[]>(() => {
+    if (!self) return [];
+    const others = (presence?.peers ?? members.filter((member) => !member.isSelf))
+      .filter((member) => member.online)
+      .map((member) => ({ id: member.id, nickname: member.nickname, role: member.role, look: member.look }));
+    return [{ id: self.id, nickname: self.nickname, role: self.role, look: selfLook }, ...others];
+  }, [presence, members, self, selfLook]);
+
   const opponents: Fighter[] = useMemo(
     () =>
       members
@@ -337,10 +346,14 @@ export default function App() {
           </div>
         </div>
         <div className="topbar-right">
-          <span className="status">
-            <span className={offline ? "status-dot offline" : "status-dot"} aria-hidden="true" />
-            {offline ? "离线 · 自在小逛" : `${memberCount} 位住户 · 在线 ${onlineCount}`}
-          </span>
+          <OnlineList
+            selfId={self.id}
+            residents={onlineResidents}
+            onlineCount={onlineCount}
+            memberCount={memberCount}
+            offline={offline}
+            onSelect={(id) => void openProfile(id)}
+          />
           <span className={`chip weather-chip w-${weather}`} title={`${presence?.weather.city ?? "上海"}的天气`}>
             {WEATHER_LABEL[weather]}
             {presence?.weather.temp != null ? ` ${presence.weather.temp}°` : ""}

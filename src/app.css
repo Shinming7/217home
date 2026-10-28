@@ -455,6 +455,141 @@ select.text-input {
   animation: none;
 }
 
+.topbar {
+  z-index: 3;
+}
+
+.status-wrap {
+  position: relative;
+}
+
+.status-toggle {
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.status-toggle:hover:not(:disabled),
+.status-toggle.open {
+  color: #ead4aa;
+}
+
+.status-toggle:disabled {
+  cursor: default;
+}
+
+.status-caret {
+  font-size: 9px;
+  opacity: 0.8;
+}
+
+.online-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  width: 212px;
+  padding: 8px;
+  border: 2px solid #5a6988;
+  background: #262b44;
+  box-shadow: 4px 4px 0 rgba(24, 20, 37, 0.55);
+}
+
+.online-pop-head {
+  margin: 0 0 6px;
+  padding: 2px 4px 6px;
+  border-bottom: 2px solid #3a4466;
+  color: #ead4aa;
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+
+.online-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 248px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.online-item {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  color: #c0cbdc;
+  font-family: inherit;
+  font-size: 12px;
+  letter-spacing: 1px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.online-item:hover,
+.online-item:focus-visible {
+  background: #3a4466;
+  color: #ead4aa;
+  outline: none;
+}
+
+.online-avatar {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border: 2px solid #181425;
+  background: #3a4466;
+}
+
+.online-avatar canvas {
+  display: block;
+  image-rendering: pixelated;
+}
+
+.online-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.online-badge {
+  flex: 0 0 auto;
+  padding: 1px 4px;
+  border: 1px solid #5a6988;
+  color: #8b9bb4;
+  font-size: 9px;
+  letter-spacing: 1px;
+}
+
+.online-badge.me {
+  border-color: #63c74d;
+  color: #63c74d;
+}
+
+.online-badge.owner {
+  border-color: #feae34;
+  color: #feae34;
+}
+
+.online-empty {
+  margin: 6px 4px 2px;
+  color: #8b9bb4;
+  font-size: 10px;
+  line-height: 1.6;
+}
+
 .dock {
   position: relative;
   z-index: 2;
