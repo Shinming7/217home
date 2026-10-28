@@ -458,6 +458,41 @@ export function application({ db, storage }: { db: Db; storage: Storage }) {
     }
   }
 
+  function personalPassword(value: unknown): string {
+    if (typeof value !== "string") throw new AppError("invalid_password", 400);
+    const length = [...value].length;
+    if (length < 4 || length > 64) throw new AppError("invalid_password", 400);
+    if (/[\u0000-\u001f\u007f]/.test(value)) throw new AppError("invalid_password", 400);
+    return value;
+  }
+
+  async function findMemberByNickname(nickname: string): Promise<any | null> {
+    const key = nickname.trim().toLowerCase();
+    const list = rows(
+      await db.from("members")
+        .select("id,nickname,role,avatar,cosmetics,intro,tags,last_x,last_y,last_dir,last_seen,created_at,password")
+        .order("created_at", { ascending: true })
+        .limit(100),
+    );
+    return list.find((row) => row.nickname?.trim().toLowerCase() === key) ?? null;
+  }
+
+  async function issueSession(memberId: string): Promise<string> {
+    const token = randomToken();
+    rows(
+      await db.from("sessions")
+        .insert({
+          id: crypto.randomUUID(),
+          member_id: memberId,
+          token_hash: await sha256Hex(token),
+          expires_at: iso(Date.now() + SESSION_TTL_MS),
+          last_used_at: iso(),
+        })
+        .select("id"),
+    );
+    return token;
+  }
+
   async function join(request: Request): Promise<Response> {
     const ip = request.headers.get("cf-connecting-ip") ?? request.headers.get("x-real-ip") ?? "unknown";
     if (!allowedByLimit("join:global", 24, 60_000) || !allowedByLimit(`join:${ip}`, 8, 60_000)) {
@@ -468,14 +503,31 @@ export function application({ db, storage }: { db: Db; storage: Storage }) {
     if (typeof body?.passcode !== "string" || body.passcode.length < 1 || body.passcode.length > 64) {
       throw new AppError("invalid_passcode", 400);
     }
+    const password = personalPassword(body?.password);
     const passcode = await ensurePasscodeSetting();
     if (!(await verifyPasscode(body.passcode, passcode))) {
       await new Promise((resolve) => setTimeout(resolve, 260));
       throw new AppError("invalid_passcode", 401);
     }
-    const existing = await allMembers(100);
-    if (existing.some((row) => row.nickname?.trim().toLowerCase() === nickname.toLowerCase())) {
-      throw new AppError("nickname_taken", 409);
+    const existing = await findMemberByNickname(nickname);
+    if (existing) {
+      const record = existing.password;
+      if (record && typeof record === "object" && typeof record.hash === "string") {
+        if (!(await verifyPasscode(password, record))) {
+          await new Promise((resolve) => setTimeout(resolve, 260));
+          throw new AppError("wrong_password", 401);
+        }
+      } else {
+        // 个人密码上线前入住的老住户，第一次带密码回来时补绑定
+        rows(
+          await db.from("members")
+            .update({ password: await hashPasscode(password) })
+            .eq("id", existing.id)
+            .select("id"),
+        );
+      }
+      const token = await issueSession(existing.id);
+      return json({ token, member: publicMember(existing, { self: true }) });
     }
     const id = crypto.randomUUID();
     rows(
@@ -492,6 +544,7 @@ export function application({ db, storage }: { db: Db; storage: Storage }) {
           last_y: 228,
           last_dir: "up",
           last_seen: null,
+          password: await hashPasscode(password),
           created_at: iso(),
         })
         .select("id"),
@@ -509,18 +562,7 @@ export function application({ db, storage }: { db: Db; storage: Storage }) {
       role = "owner";
       rows(await db.from("members").update({ role }).eq("id", id).select("id"));
     }
-    const token = randomToken();
-    rows(
-      await db.from("sessions")
-        .insert({
-          id: crypto.randomUUID(),
-          member_id: id,
-          token_hash: await sha256Hex(token),
-          expires_at: iso(Date.now() + SESSION_TTL_MS),
-          last_used_at: iso(),
-        })
-        .select("id"),
-    );
+    const token = await issueSession(id);
     const member = {
       id,
       nickname,

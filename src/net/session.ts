@@ -1,6 +1,7 @@
 import type { SelfMember } from "./types";
 
 const KEY = "217-house-session-v2";
+const NICKNAME_KEY = "217-house-nickname-v1";
 
 export type StoredSession = { token: string; member: SelfMember };
 
@@ -34,6 +35,22 @@ export function updateStoredMember(member: SelfMember) {
 export function clearStoredSession() {
   try {
     localStorage.removeItem(KEY);
+  } catch {
+    // 忽略存储不可用
+  }
+}
+
+export function loadStoredNickname(): string {
+  try {
+    return localStorage.getItem(NICKNAME_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function saveStoredNickname(nickname: string) {
+  try {
+    localStorage.setItem(NICKNAME_KEY, nickname);
   } catch {
     // 忽略存储不可用
   }

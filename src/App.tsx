@@ -92,7 +92,7 @@ export default function App() {
         if (!alive) return;
         setAuthToken(null);
         clearStoredSession();
-        setNotice("上次的登录已经失效，重新输入暗号就好。");
+        setNotice("上次的登录已经失效，用名字和个人密码重新进屋就好。");
         setStage("join");
       }
     })();
@@ -110,7 +110,7 @@ export default function App() {
     setPanel(null);
     setFightOpen(false);
     setStage("join");
-    setNotice("登录已经失效，请重新输入房间暗号。");
+    setNotice("登录已经失效，请用名字和个人密码重新进屋。");
   }, []);
 
   const refreshMembers = useCallback(async () => {
@@ -275,7 +275,7 @@ export default function App() {
     setPanel(null);
     setFightOpen(false);
     setStage("join");
-    setNotice("");
+    setNotice("已经离开小屋，下次用名字和个人密码回来。");
     setQuitArmed(false);
   }, []);
 

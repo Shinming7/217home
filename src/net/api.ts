@@ -64,8 +64,8 @@ const post = (body: unknown): RequestInit => ({ method: "POST", body: JSON.strin
 const patch = (body: unknown): RequestInit => ({ method: "PATCH", body: JSON.stringify(body) });
 
 export const api = {
-  join: (nickname: string, passcode: string) =>
-    request<JoinResult>("/session/join", post({ nickname, passcode })),
+  join: (nickname: string, passcode: string, password: string) =>
+    request<JoinResult>("/session/join", post({ nickname, passcode, password })),
   logout: () => request<{ ok: true }>("/session/logout", { method: "POST" }),
   me: () => request<{ member: SelfMember }>("/me"),
   updateMe: (patchBody: ProfilePatch) => request<{ member: SelfMember }>("/me", patch(patchBody)),
@@ -112,6 +112,8 @@ export const api = {
 
 export const ERROR_TEXT: Record<string, string> = {
   invalid_passcode: "暗号不对，再想想？",
+  invalid_password: "个人密码需要 4～64 个字符",
+  wrong_password: "这个名字的个人密码不对，再想想？",
   nickname_taken: "这个名字已经被屋里的人用了",
   rate_limited: "操作太频繁了，歇一会儿再来",
   invalid_nickname: "昵称需要 1～12 个字",

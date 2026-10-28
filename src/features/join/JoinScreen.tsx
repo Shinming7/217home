@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, errorText } from "../../net/api";
+import { loadStoredNickname, saveStoredNickname } from "../../net/session";
 import type { JoinResult } from "../../net/types";
 import { createRoomCanvas } from "../../game/roomArt";
 
@@ -10,7 +11,8 @@ type JoinScreenProps = {
 
 export function JoinScreen({ notice, onJoined }: JoinScreenProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [nickname, setNickname] = useState("");
+  const [nickname, setNickname] = useState(() => loadStoredNickname());
+  const [password, setPassword] = useState("");
   const [passcode, setPasscode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -38,6 +40,10 @@ export function JoinScreen({ notice, onJoined }: JoinScreenProps) {
       setError("名字最多 12 个字");
       return;
     }
+    if ([...password].length < 4) {
+      setError("个人密码至少 4 位，下次回来还要靠它");
+      return;
+    }
     if (!passcode) {
       setError("请输入房间暗号");
       return;
@@ -45,7 +51,8 @@ export function JoinScreen({ notice, onJoined }: JoinScreenProps) {
     setBusy(true);
     setError("");
     try {
-      const result = await api.join(name, passcode);
+      const result = await api.join(name, passcode, password);
+      saveStoredNickname(name);
       onJoined(result);
     } catch (caught) {
       setError(errorText(caught));
@@ -69,7 +76,7 @@ export function JoinScreen({ notice, onJoined }: JoinScreenProps) {
           </div>
         </div>
         <p className="gate-lede">
-          一间只属于我们的小屋。输入房间暗号，换好你的像素小人，就可以住进来。
+          一间只属于我们的小屋。写下名字和个人密码，下次回来还认得你；再输入房间暗号就能推门进屋。
         </p>
 
         {notice ? <p className="gate-notice">{notice}</p> : null}
@@ -87,6 +94,18 @@ export function JoinScreen({ notice, onJoined }: JoinScreenProps) {
             />
           </label>
           <label className="field">
+            <span>个人密码</span>
+            <input
+              className="text-input"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="至少 4 位，回来时还要用"
+              maxLength={64}
+              autoComplete="current-password"
+            />
+          </label>
+          <label className="field">
             <span>房间暗号</span>
             <input
               className="text-input"
@@ -94,7 +113,7 @@ export function JoinScreen({ notice, onJoined }: JoinScreenProps) {
               value={passcode}
               onChange={(event) => setPasscode(event.target.value)}
               placeholder="屋里的暗号"
-              autoComplete="current-password"
+              autoComplete="off"
             />
           </label>
           {error ? <p className="form-error" role="alert">{error}</p> : null}
@@ -104,7 +123,7 @@ export function JoinScreen({ notice, onJoined }: JoinScreenProps) {
         </form>
 
         <p className="gate-fine">
-          没有暗号就进不来；屋里的一切照片和留言也只有住户能看到。第一位进屋的人会成为站长。
+          个人密码加盐保存在服务器上，只用来认出你；房间暗号只给屋里的人。第一位进屋的人会成为站长。
         </p>
       </section>
     </div>
