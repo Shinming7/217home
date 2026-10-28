@@ -590,6 +590,83 @@ select.text-input {
   line-height: 1.6;
 }
 
+/* ---------- 约战邀请弹卡 ---------- */
+
+.invite-pop {
+  position: fixed;
+  right: 16px;
+  bottom: 88px;
+  z-index: 35;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(288px, calc(100vw - 32px));
+  padding: 12px;
+  border: 3px solid #feae34;
+  background: #262b44;
+  box-shadow:
+    0 0 0 3px #181425,
+    8px 8px 0 rgba(24, 20, 37, 0.65);
+  animation: slide-in 0.18s steps(4) both;
+}
+
+.invite-pop-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.invite-pop-avatar {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #181425;
+  background: #3a4466;
+}
+
+.invite-pop-text {
+  min-width: 0;
+}
+
+.invite-pop-kicker {
+  margin: 0;
+  color: #feae34;
+  font-size: 9px;
+  letter-spacing: 1px;
+}
+
+.invite-pop-name {
+  margin: 2px 0 0;
+  color: #ead4aa;
+  font-size: 13px;
+  letter-spacing: 1px;
+  line-height: 1.5;
+}
+
+.invite-pop-note {
+  margin: 0;
+  color: #8b9bb4;
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.invite-pop-extra {
+  margin: 0;
+  color: #5a6988;
+  font-size: 10px;
+}
+
+.invite-pop-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.invite-pop-actions .pixel-btn {
+  flex: 1;
+}
+
 .dock {
   position: relative;
   z-index: 2;
@@ -601,6 +678,7 @@ select.text-input {
 }
 
 .dock-btn {
+  position: relative;
   appearance: none;
   border: 2px solid #5a6988;
   background: #262b44;
@@ -611,6 +689,23 @@ select.text-input {
   padding: 7px 10px;
   cursor: pointer;
   box-shadow: 0 3px 0 #181425;
+}
+
+.dock-badge {
+  position: absolute;
+  top: -7px;
+  right: -8px;
+  min-width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  padding: 0 3px;
+  border: 2px solid #181425;
+  background: #e43b44;
+  color: #ead4aa;
+  font-size: 9px;
+  line-height: 1;
+  letter-spacing: 0;
 }
 
 .dock-btn:hover {
@@ -1077,6 +1172,282 @@ select.text-input {
   color: #ead4aa;
   line-height: 1.7;
   word-break: break-word;
+}
+
+/* ---------- 消息中心 ---------- */
+
+.inbox-threads {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inbox-thread {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px;
+  border: 2px solid #3a4466;
+  background: rgba(24, 20, 37, 0.4);
+  color: #c0cbdc;
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.inbox-thread:hover,
+.inbox-thread:focus-visible {
+  background: #3a4466;
+  outline: none;
+}
+
+.inbox-avatar {
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #181425;
+  background: #3a4466;
+}
+
+.inbox-thread-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.inbox-thread-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.inbox-thread-top strong {
+  color: #fee761;
+  font-weight: normal;
+  letter-spacing: 1px;
+}
+
+.inbox-thread-top em {
+  flex: 0 0 auto;
+  color: #5a6988;
+  font-size: 10px;
+  font-style: normal;
+}
+
+.inbox-preview {
+  color: #8b9bb4;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inbox-preview.invite {
+  color: #feae34;
+}
+
+.inbox-unread {
+  flex: 0 0 auto;
+  min-width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  padding: 0 4px;
+  border: 2px solid #181425;
+  background: #e43b44;
+  color: #ead4aa;
+  font-size: 10px;
+}
+
+.inbox-privacy {
+  margin: 14px 0 0;
+}
+
+.inbox-thread-view {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.inbox-thread-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.inbox-clear {
+  appearance: none;
+  border: 2px solid #3a4466;
+  background: none;
+  color: #8b9bb4;
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 1px;
+  padding: 5px 9px;
+  cursor: pointer;
+}
+
+.inbox-clear:hover {
+  border-color: #733e39;
+  color: #ead4aa;
+}
+
+.inbox-clear.armed {
+  border-color: #e43b44;
+  background: #733e39;
+  color: #fee761;
+}
+
+.inbox-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 200px;
+  max-height: min(42dvh, 360px);
+  overflow-y: auto;
+  padding: 4px 2px;
+}
+
+.inbox-bubble {
+  align-self: flex-start;
+  max-width: 78%;
+  padding: 8px 10px;
+  border: 2px solid #3a4466;
+  background: rgba(24, 20, 37, 0.55);
+  color: #ead4aa;
+}
+
+.inbox-bubble p {
+  margin: 0;
+  line-height: 1.65;
+  word-break: break-word;
+}
+
+.inbox-bubble span {
+  display: block;
+  margin-top: 4px;
+  color: #5a6988;
+  font-size: 9px;
+  text-align: right;
+}
+
+.inbox-bubble.mine {
+  align-self: flex-end;
+  border-color: #63924a;
+  background: rgba(99, 199, 77, 0.12);
+}
+
+.inbox-invite-card {
+  align-self: flex-start;
+  max-width: 78%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 2px solid #feae34;
+  background: rgba(254, 174, 52, 0.08);
+}
+
+.inbox-invite-card.mine {
+  align-self: flex-end;
+  border-color: #5a6988;
+  background: rgba(90, 105, 136, 0.12);
+}
+
+.inbox-invite-kicker {
+  margin: 0;
+  color: #feae34;
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+.inbox-invite-line {
+  margin: 0;
+  color: #ead4aa;
+  line-height: 1.6;
+}
+
+.inbox-invite-card .fineprint {
+  margin: 0;
+}
+
+.inbox-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inbox-input {
+  min-height: 52px;
+}
+
+/* ---------- 联机邀请 ---------- */
+
+.online-invites {
+  margin-top: 12px;
+  padding: 10px;
+  border: 2px solid #3a4466;
+  background: rgba(24, 20, 37, 0.4);
+}
+
+.online-invites-title {
+  margin: 0 0 8px;
+  color: #ead4aa;
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+.online-invite-list {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.online-invite-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.online-invite-portrait {
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #181425;
+  background: #3a4466;
+}
+
+.online-invite-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #c0cbdc;
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+.online-invite-row .pixel-btn {
+  padding: 5px 10px;
+  font-size: 11px;
 }
 
 /* ---------- 猜拳 ---------- */
@@ -3654,4 +4025,21 @@ body.forced-landscape-body .app.forced-landscape .online-lobby-fighters i {
 
 body.forced-landscape-body .app.forced-landscape .online-warning {
   font-size: 11.5px;
+}
+
+@media (max-width: 640px) {
+  .invite-pop {
+    right: 8px;
+    bottom: 76px;
+    width: calc(100vw - 16px);
+  }
+
+  .inbox-bubble,
+  .inbox-invite-card {
+    max-width: 88%;
+  }
+
+  .inbox-messages {
+    max-height: 40dvh;
+  }
 }

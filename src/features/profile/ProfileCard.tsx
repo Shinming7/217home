@@ -8,6 +8,7 @@ type ProfileCardProps = {
   selfId: string;
   onClose: () => void;
   onChat: () => void;
+  onMessage: () => void;
   onFight: () => void;
 };
 
@@ -17,7 +18,7 @@ function timeLabel(iso: string): string {
   return `${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
-export function ProfileCard({ detail, selfId, onClose, onChat, onFight }: ProfileCardProps) {
+export function ProfileCard({ detail, selfId, onClose, onChat, onMessage, onFight }: ProfileCardProps) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -101,6 +102,9 @@ export function ProfileCard({ detail, selfId, onClose, onChat, onFight }: Profil
           <div className="profile-actions">
             <button className="pixel-btn primary" onClick={onChat}>
               聊两句
+            </button>
+            <button className="pixel-btn" onClick={onMessage}>
+              发私信
             </button>
             <button className="pixel-btn" onClick={onFight}>
               约战八角笼

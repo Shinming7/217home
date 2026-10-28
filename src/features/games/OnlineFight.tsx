@@ -6,11 +6,16 @@ import { FighterCanvas } from "./FighterCanvas";
 import type { CharacterLook } from "../../game/types";
 import type { FightMoveView, OnlineFightFighter, OnlineFightOutcome, OnlineFightView } from "../../net/types";
 
+type InviteTarget = { id: string; nickname: string; look: CharacterLook | null };
+
 type OnlineFightProps = {
   self: { id: string; nickname: string; look: CharacterLook };
+  inviteTargets: InviteTarget[];
+  autoJoin?: boolean;
   onBack: () => void;
   onClose: () => void;
   onInsideChange: (inside: boolean) => void;
+  onNotify: (text: string, warn?: boolean) => void;
 };
 
 const MOVES: { id: FightMoveView; label: string; hint: string }[] = [
@@ -80,16 +85,27 @@ function resultCopy(outcome: OnlineFightOutcome, selfId: string) {
       };
 }
 
-export function OnlineFight({ self, onBack, onClose, onInsideChange }: OnlineFightProps) {
+export function OnlineFight({
+  self,
+  inviteTargets,
+  autoJoin,
+  onBack,
+  onClose,
+  onInsideChange,
+  onNotify,
+}: OnlineFightProps) {
   const [fight, setFight] = useState<OnlineFightView | null>(null);
   const [warning, setWarning] = useState("");
   const [busy, setBusy] = useState(false);
   const [tick, setTick] = useState(() => Date.now());
   const [fxKey, setFxKey] = useState(0);
   const [leaveArmed, setLeaveArmed] = useState(false);
+  const [inviting, setInviting] = useState<string | null>(null);
+  const [invited, setInvited] = useState<string[]>([]);
   const offsetRef = useRef(0);
   const insideRef = useRef(false);
   const resolvedRef = useRef(0);
+  const autoTried = useRef(false);
   const leaveTimer = useRef(0);
   const logRef = useRef<HTMLDivElement>(null);
 
@@ -174,9 +190,37 @@ export function OnlineFight({ self, onBack, onClose, onInsideChange }: OnlineFig
     }
   }, []);
 
+  useEffect(() => {
+    if (!autoJoin || autoTried.current || !fight) return;
+    if (fight.viewer.inside) {
+      autoTried.current = true;
+      return;
+    }
+    if (fight.phase !== "waiting" || fight.fighters.length >= 2) {
+      autoTried.current = true;
+      return;
+    }
+    autoTried.current = true;
+    void run(api.fightOnlineJoin);
+  }, [autoJoin, fight, run]);
+
   const join = () => {
     if (busy) return;
     void run(api.fightOnlineJoin);
+  };
+
+  const sendInvite = async (target: InviteTarget) => {
+    if (inviting || invited.includes(target.id)) return;
+    setInviting(target.id);
+    try {
+      await api.inviteToFight(target.id);
+      setInvited((current) => [...current, target.id]);
+      onNotify(`约战邀请已经送到 ${target.nickname} 的信箱`);
+    } catch (error) {
+      onNotify(errorText(error), true);
+    } finally {
+      setInviting(null);
+    }
   };
 
   const submit = (move: FightMoveView) => {
@@ -406,6 +450,35 @@ export function OnlineFight({ self, onBack, onClose, onInsideChange }: OnlineFig
         </button>
         <p className="fineprint">输赢两边都会加好感 · 每天第一次交手才加</p>
       </div>
+
+      {!waitingFighter && inviteTargets.length > 0 ? (
+        <div className="online-invites">
+          <p className="online-invites-title">邀请在线住户</p>
+          <ul className="online-invite-list">
+            {inviteTargets.map((target) => (
+              <li key={target.id} className="online-invite-row">
+                <span className="online-invite-portrait">
+                  <PixelPortrait
+                    look={target.look ?? fallbackLook(target.id)}
+                    label={`${target.nickname}的头像`}
+                    size={26}
+                  />
+                </span>
+                <span className="online-invite-name">{target.nickname}</span>
+                <button
+                  className="pixel-btn"
+                  disabled={inviting === target.id || invited.includes(target.id)}
+                  onClick={() => void sendInvite(target)}
+                >
+                  {invited.includes(target.id) ? "已邀请" : inviting === target.id ? "送信中…" : "约战"}
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="fineprint">邀请会送进对方的信箱，10 分钟内有效；先走进笼子，对方一到就开打。</p>
+        </div>
+      ) : null}
+
       {warning ? <p className="online-warning" role="alert">{warning}</p> : null}
     </div>
   );

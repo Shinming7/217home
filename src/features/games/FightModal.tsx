@@ -18,9 +18,13 @@ export type Fighter = { id: string; nickname: string; look: CharacterLook | null
 type FightModalProps = {
   self: { id: string; nickname: string; look: CharacterLook };
   opponents: Fighter[];
+  onlineTargets: Fighter[];
   initialFoeId?: string | null;
+  initialMode?: "online" | null;
+  autoJoin?: boolean;
   onClose: () => void;
   onResult: (targetId: string, result: "win" | "lose", rounds: number) => void;
+  onNotify: (text: string, warn?: boolean) => void;
 };
 
 const MOVES: { id: Move; label: string; hint: string }[] = [
@@ -86,8 +90,20 @@ function aiChoose(foeHp: number, playerHp: number): Move {
   return "dodge";
 }
 
-export function FightModal({ self, opponents, initialFoeId, onClose, onResult }: FightModalProps) {
-  const [mode, setMode] = useState<FightMode>(initialFoeId ? "ai" : "mode");
+export function FightModal({
+  self,
+  opponents,
+  onlineTargets,
+  initialFoeId,
+  initialMode,
+  autoJoin,
+  onClose,
+  onResult,
+  onNotify,
+}: FightModalProps) {
+  const [mode, setMode] = useState<FightMode>(
+    initialFoeId ? "ai" : initialMode === "online" ? "online" : "mode",
+  );
   const [onlineInside, setOnlineInside] = useState(false);
   const [stage, setStage] = useState<Stage>("select");
   const [foeId, setFoeId] = useState<string | null>(null);
@@ -333,9 +349,12 @@ export function FightModal({ self, opponents, initialFoeId, onClose, onResult }:
         ) : mode === "online" ? (
           <OnlineFight
             self={self}
+            inviteTargets={onlineTargets}
+            autoJoin={Boolean(autoJoin)}
             onBack={() => setMode("mode")}
             onClose={onClose}
             onInsideChange={setOnlineInside}
+            onNotify={onNotify}
           />
         ) : stage === "select" || !foe ? (
           <div className="fight-select">

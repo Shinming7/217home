@@ -59,6 +59,37 @@ export type PresencePayload = {
   memberCount: number;
 };
 
+export type InboxKind = "dm" | "invite";
+
+export type InboxPeer = { id: string; nickname: string; look: CharacterLook | null };
+
+export type InboxMessage = {
+  id: string;
+  kind: InboxKind;
+  body: string;
+  mine: boolean;
+  createdAt: string;
+  readAt: string | null;
+  invite: { game: "fight"; expiresAt: string | null; expired: boolean } | null;
+};
+
+export type InboxThread = {
+  peer: InboxPeer;
+  lastBody: string;
+  lastKind: InboxKind;
+  lastMine: boolean;
+  lastAt: string;
+  unread: number;
+};
+
+export type InboxInviteAlert = {
+  id: string;
+  from: InboxPeer;
+  game: "fight";
+  createdAt: string;
+  expiresAt: string | null;
+};
+
 export type PhotoAuthor = { id: string; nickname: string; look: CharacterLook | null };
 
 export type PhotoItem = {

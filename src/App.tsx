@@ -7,6 +7,8 @@ import { JoinScreen } from "./features/join/JoinScreen";
 import { Creator } from "./features/creator/Creator";
 import { PhotoWall } from "./features/photos/PhotoWall";
 import { MessageBoard } from "./features/board/MessageBoard";
+import { InboxModal } from "./features/inbox/InboxModal";
+import { InvitePopup } from "./features/inbox/InvitePopup";
 import { RpsModal } from "./features/games/RpsModal";
 import { FishModal } from "./features/games/FishModal";
 import { PokerModal } from "./features/games/PokerModal";
@@ -15,14 +17,15 @@ import { OwnerClaim } from "./features/admin/OwnerClaim";
 import { api, ApiError, errorText, setAuthToken } from "./net/api";
 import { clearStoredSession, loadStoredSession, saveStoredSession } from "./net/session";
 import { usePresence } from "./net/presence";
+import { useInboxFeed } from "./net/inbox";
 import { useForcedLandscape } from "./features/room/useLandscape";
-import type { JoinResult, MemberDetail, MemberSummary, SelfMember } from "./net/types";
+import type { InboxInviteAlert, JoinResult, MemberDetail, MemberSummary, SelfMember } from "./net/types";
 import { dialogueFor, fallbackLook } from "./game/looks";
 import type { Dir, PeerInput, Phase, WeatherKind } from "./game/types";
 import type { RoomEngine } from "./game/engine";
 
 type Stage = "boot" | "join" | "create" | "room";
-type PanelKind = "photos" | "board" | "rps" | "fish" | "poker" | "admin" | "edit";
+type PanelKind = "photos" | "board" | "inbox" | "rps" | "fish" | "poker" | "admin" | "edit";
 
 const PHASE_LABEL: Record<Phase, string> = { morning: "晨光", day: "白天", dusk: "黄昏", night: "夜晚" };
 const WEATHER_LABEL: Record<WeatherKind, string> = {
@@ -52,6 +55,9 @@ export default function App() {
   const [panel, setPanel] = useState<PanelKind | null>(null);
   const [fightOpen, setFightOpen] = useState(false);
   const [fightFoeId, setFightFoeId] = useState<string | null>(null);
+  const [fightInvite, setFightInvite] = useState(false);
+  const [inboxPeerId, setInboxPeerId] = useState<string | null>(null);
+  const [dismissedInvites, setDismissedInvites] = useState<string[]>([]);
   const [ownerClaimOpen, setOwnerClaimOpen] = useState(false);
   const [toast, setToast] = useState("");
   const [toastWarn, setToastWarn] = useState(false);
@@ -112,6 +118,10 @@ export default function App() {
     setSelected(null);
     setPanel(null);
     setFightOpen(false);
+    setFightFoeId(null);
+    setFightInvite(false);
+    setInboxPeerId(null);
+    setDismissedInvites([]);
     setOwnerClaimOpen(false);
     setStage("join");
     setNotice("登录已经失效，请用名字和个人密码重新进屋。");
@@ -167,6 +177,8 @@ export default function App() {
     onAuthError: handleAuthError,
   });
 
+  const inbox = useInboxFeed({ enabled: stage === "room", onAuthError: handleAuthError });
+
   useEffect(() => {
     if (presence) {
       setMembers((current) => {
@@ -211,6 +223,11 @@ export default function App() {
     [members],
   );
 
+  const activeInvite = useMemo(
+    () => inbox.invites.find((invite) => !dismissedInvites.includes(invite.id)) ?? null,
+    [inbox.invites, dismissedInvites],
+  );
+
   const phase: Phase = presence?.phase ?? "dusk";
   const weather: WeatherKind = presence?.weather.kind ?? "clear";
   const paused = Boolean(selected) || fightOpen || panel !== null || ownerClaimOpen;
@@ -247,6 +264,28 @@ export default function App() {
     } catch (error) {
       notify(errorText(error), true);
     }
+  };
+
+  const openInbox = (peerId: string | null = null) => {
+    setInboxPeerId(peerId);
+    setPanel("inbox");
+    setSelected(null);
+  };
+
+  const acceptInvite = (fromId: string) => {
+    setSelected(null);
+    setPanel(null);
+    setInboxPeerId(null);
+    setFightFoeId(null);
+    setFightInvite(true);
+    setFightOpen(true);
+    void api.readInbox(fromId).catch(() => {});
+    void inbox.refresh();
+  };
+
+  const acceptPopupInvite = (invite: InboxInviteAlert) => {
+    setDismissedInvites((ids) => [...ids, invite.id]);
+    acceptInvite(invite.from.id);
   };
 
   const handleChat = async () => {
@@ -293,6 +332,10 @@ export default function App() {
     setSelected(null);
     setPanel(null);
     setFightOpen(false);
+    setFightFoeId(null);
+    setFightInvite(false);
+    setInboxPeerId(null);
+    setDismissedInvites([]);
     setOwnerClaimOpen(false);
     setStage("join");
     setNotice("已经离开小屋，下次用名字和个人密码回来。");
@@ -375,6 +418,7 @@ export default function App() {
             onSelectMember={(id) => void openProfile(id)}
             onEnterCage={() => {
               setFightFoeId(null);
+              setFightInvite(false);
               setFightOpen(true);
             }}
             onOpenPhotos={() => setPanel("photos")}
@@ -388,6 +432,14 @@ export default function App() {
       </main>
 
       <nav className="dock" aria-label="小屋功能">
+        <button className={panel === "inbox" ? "dock-btn active" : "dock-btn"} onClick={() => openInbox()}>
+          消息
+          {inbox.count > 0 ? (
+            <span className="dock-badge" aria-label={`${inbox.count} 条未读`}>
+              {inbox.count > 99 ? "99+" : inbox.count}
+            </span>
+          ) : null}
+        </button>
         <button className={panel === "photos" ? "dock-btn active" : "dock-btn"} onClick={() => setPanel("photos")}>
           照片墙
         </button>
@@ -440,8 +492,10 @@ export default function App() {
           selfId={self.id}
           onClose={() => setSelected(null)}
           onChat={() => void handleChat()}
+          onMessage={() => openInbox(selected.member.id)}
           onFight={() => {
             setFightFoeId(selected.member.id);
+            setFightInvite(false);
             setFightOpen(true);
             setSelected(null);
           }}
@@ -452,12 +506,19 @@ export default function App() {
         <FightModal
           self={{ id: self.id, nickname: self.nickname, look: selfLook }}
           opponents={opponents}
+          onlineTargets={onlineResidents
+            .filter((resident) => resident.id !== self.id)
+            .map((resident) => ({ id: resident.id, nickname: resident.nickname, look: resident.look }))}
           initialFoeId={fightFoeId}
+          initialMode={fightInvite ? "online" : null}
+          autoJoin={fightInvite}
           onClose={() => {
             setFightOpen(false);
             setFightFoeId(null);
+            setFightInvite(false);
           }}
           onResult={(targetId, result, rounds) => void handleFightResult(targetId, result, rounds)}
+          onNotify={notify}
         />
       ) : null}
 
@@ -476,6 +537,18 @@ export default function App() {
       ) : null}
       {panel === "board" ? (
         <MessageBoard isOwner={self.role === "owner"} onClose={() => setPanel(null)} onChanged={() => void refreshMembers()} />
+      ) : null}
+      {panel === "inbox" ? (
+        <InboxModal
+          initialPeerId={inboxPeerId}
+          onClose={() => {
+            setPanel(null);
+            setInboxPeerId(null);
+            void inbox.refresh();
+          }}
+          onChanged={() => void inbox.refresh()}
+          onAcceptInvite={(fromId) => acceptInvite(fromId)}
+        />
       ) : null}
       {panel === "rps" ? <RpsModal opponents={opponents} onClose={() => setPanel(null)} /> : null}
       {panel === "fish" ? <FishModal onClose={() => setPanel(null)} /> : null}
@@ -508,6 +581,15 @@ export default function App() {
             notify("你现在是站长了，去站长面板看看吧");
             void refreshMembers();
           }}
+        />
+      ) : null}
+
+      {activeInvite && !fightOpen && panel === null && !selected && !ownerClaimOpen ? (
+        <InvitePopup
+          invite={activeInvite}
+          extraCount={inbox.invites.length - 1}
+          onAccept={() => acceptPopupInvite(activeInvite)}
+          onLater={() => setDismissedInvites((ids) => [...ids, activeInvite.id])}
         />
       ) : null}
 

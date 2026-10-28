@@ -38,6 +38,8 @@ const ONLINE_WINDOW_MS = 12_000;
 const PHOTO_ORIG_MAX = 2 * 1024 * 1024;
 const PHOTO_PIXEL_MAX = 160_000;
 const PHOTO_WALL_LIMIT = 30;
+const INBOX_BODY_MAX = 200;
+const INVITE_TTL_MS = 10 * 60_000;
 const LOOK_KEYS = [
   "hair",
   "hairDark",
@@ -819,6 +821,251 @@ export function application({ db, storage }: { db: Db; storage: Storage }) {
     );
   }
 
+  function inboxItem(row: any, viewerId: string): any {
+    const payload = row.payload && typeof row.payload === "object" ? row.payload : {};
+    const expiresAt = typeof payload.expiresAt === "string" ? payload.expiresAt : null;
+    return {
+      id: row.id,
+      kind: row.kind === "invite" ? "invite" : "dm",
+      body: typeof row.body === "string" ? row.body : "",
+      mine: row.sender_id === viewerId,
+      createdAt: row.created_at,
+      readAt: typeof row.read_at === "string" ? row.read_at : null,
+      invite: row.kind === "invite"
+        ? { game: "fight", expiresAt, expired: Boolean(expiresAt && Date.parse(expiresAt) <= Date.now()) }
+        : null,
+    };
+  }
+
+  function inboxHidden(row: any, viewerId: string): boolean {
+    return row.sender_id === viewerId ? Boolean(row.sender_deleted) : Boolean(row.recipient_deleted);
+  }
+
+  function inboxPending(row: any, now = Date.now()): boolean {
+    if (row.kind !== "invite") return true;
+    const expiresAt = Date.parse(row.payload?.expiresAt ?? "");
+    return Number.isFinite(expiresAt) && expiresAt > now;
+  }
+
+  async function inboxRowsFor(memberId: string): Promise<any[]> {
+    const sent = rows(
+      await db.from("inbox_messages")
+        .select("id,sender_id,recipient_id,kind,body,payload,read_at,sender_deleted,recipient_deleted,created_at")
+        .eq("sender_id", memberId)
+        .limit(500),
+    );
+    const received = rows(
+      await db.from("inbox_messages")
+        .select("id,sender_id,recipient_id,kind,body,payload,read_at,sender_deleted,recipient_deleted,created_at")
+        .eq("recipient_id", memberId)
+        .limit(500),
+    );
+    const seen = new Set<string>();
+    const all: any[] = [];
+    for (const row of [...sent, ...received]) {
+      if (seen.has(row.id)) continue;
+      seen.add(row.id);
+      all.push(row);
+    }
+    return all.sort((left, right) => (left.created_at < right.created_at ? -1 : 1));
+  }
+
+  function inboxPeerSummary(peerId: string, byId: Map<string, any>): any {
+    const member = byId.get(peerId);
+    if (!member) return { id: peerId, nickname: "旧住户", look: null };
+    const base = publicMember(member);
+    return { id: base.id, nickname: base.nickname, look: base.look };
+  }
+
+  async function inboxFindPeer(peerId: string): Promise<any | null> {
+    if (!isUuid(peerId)) return null;
+    const found = rows(await db.from("members").select("id,nickname,avatar").eq("id", peerId).limit(1));
+    if (!found.length) return null;
+    return inboxPeerSummary(peerId, new Map([[peerId, found[0]]]));
+  }
+
+  async function inboxUnread(member: any): Promise<Response> {
+    if (!allowedByLimit(`inbox:poll:${member.id}`, 120, 60_000)) throw new AppError("rate_limited", 429);
+    const incoming = rows(
+      await db.from("inbox_messages")
+        .select("id,sender_id,kind,payload,read_at,recipient_deleted,created_at")
+        .eq("recipient_id", member.id)
+        .limit(500),
+    );
+    const now = Date.now();
+    const pending = incoming
+      .filter((row) => !row.recipient_deleted && !row.read_at && inboxPending(row, now));
+    const members = await allMembers(100);
+    const byId = new Map(members.map((row) => [row.id, row]));
+    const invites = pending
+      .filter((row) => row.kind === "invite")
+      .slice(-5)
+      .reverse()
+      .map((row) => ({
+        id: row.id,
+        from: inboxPeerSummary(row.sender_id, byId),
+        game: "fight",
+        createdAt: row.created_at,
+        expiresAt: row.payload?.expiresAt ?? null,
+      }));
+    return json({ count: pending.length, invites });
+  }
+
+  async function inboxThreads(member: any): Promise<Response> {
+    if (!allowedByLimit(`inbox:list:${member.id}`, 60, 60_000)) throw new AppError("rate_limited", 429);
+    const all = await inboxRowsFor(member.id);
+    const members = await allMembers(100);
+    const byId = new Map(members.map((row) => [row.id, row]));
+    const now = Date.now();
+    const threads = new Map<string, any>();
+    for (const row of all) {
+      if (inboxHidden(row, member.id)) continue;
+      const peerId = row.sender_id === member.id ? row.recipient_id : row.sender_id;
+      const entry = threads.get(peerId) ?? {
+        peer: inboxPeerSummary(peerId, byId),
+        lastBody: "",
+        lastKind: "dm",
+        lastMine: false,
+        lastAt: "",
+        unread: 0,
+      };
+      if (row.created_at >= entry.lastAt) {
+        entry.lastAt = row.created_at;
+        entry.lastKind = row.kind === "invite" ? "invite" : "dm";
+        entry.lastMine = row.sender_id === member.id;
+        entry.lastBody = row.kind === "invite" ? "" : (typeof row.body === "string" ? row.body : "");
+      }
+      if (row.recipient_id === member.id && !row.read_at && inboxPending(row, now)) {
+        entry.unread += 1;
+      }
+      threads.set(peerId, entry);
+    }
+    return json({ threads: [...threads.values()].sort((left, right) => (left.lastAt < right.lastAt ? 1 : -1)) });
+  }
+
+  async function inboxThread(member: any, peerId: string): Promise<Response> {
+    if (!allowedByLimit(`inbox:thread:${member.id}`, 90, 60_000)) throw new AppError("rate_limited", 429);
+    if (!isUuid(peerId) || peerId === member.id) throw new AppError("invalid_target", 400);
+    const peer = await inboxFindPeer(peerId);
+    if (!peer) throw new AppError("not_found", 404);
+    const all = await inboxRowsFor(member.id);
+    const messages = all
+      .filter((row) => row.sender_id === peerId || row.recipient_id === peerId)
+      .filter((row) => !inboxHidden(row, member.id))
+      .slice(-200)
+      .map((row) => inboxItem(row, member.id));
+    const now = iso();
+    for (const row of all) {
+      if (row.sender_id === peerId && row.recipient_id === member.id && !row.read_at && !row.recipient_deleted) {
+        rows(await db.from("inbox_messages").update({ read_at: now }).eq("id", row.id).select("id"));
+      }
+    }
+    return json({ peer, messages });
+  }
+
+  async function inboxSend(request: Request, member: any, peerId: string): Promise<Response> {
+    if (!allowedByLimit(`inbox:send:${member.id}`, 30, 60_000)) throw new AppError("rate_limited", 429);
+    if (!isUuid(peerId) || peerId === member.id) throw new AppError("invalid_target", 400);
+    const body = await readJson(request, 2048);
+    const message = text(body?.body, INBOX_BODY_MAX, "message");
+    if (!(await inboxFindPeer(peerId))) throw new AppError("not_found", 404);
+    const id = crypto.randomUUID();
+    const createdAt = iso();
+    const row = {
+      id,
+      sender_id: member.id,
+      recipient_id: peerId,
+      kind: "dm",
+      body: message,
+      payload: null,
+      read_at: null,
+      sender_deleted: false,
+      recipient_deleted: false,
+      created_at: createdAt,
+    };
+    rows(await db.from("inbox_messages").insert(row).select("id"));
+    return json({ message: inboxItem(row, member.id) }, 201);
+  }
+
+  async function inboxInvite(request: Request, member: any): Promise<Response> {
+    if (!allowedByLimit(`inbox:invite:${member.id}`, 12, 60_000)) throw new AppError("rate_limited", 429);
+    const body = await readJson(request, 1024);
+    if (body?.game !== "fight") throw new AppError("invalid_input", 400);
+    const peerId = body?.toId;
+    if (!isUuid(peerId) || peerId === member.id) throw new AppError("invalid_target", 400);
+    if (!(await inboxFindPeer(peerId))) throw new AppError("not_found", 404);
+    const now = Date.now();
+    const previous = rows(
+      await db.from("inbox_messages")
+        .select("id,sender_id,recipient_id,kind,read_at")
+        .eq("sender_id", member.id)
+        .limit(200),
+    );
+    for (const row of previous) {
+      if (row.recipient_id === peerId && row.kind === "invite" && !row.read_at) {
+        rows(await db.from("inbox_messages").update({ read_at: iso(now) }).eq("id", row.id).select("id"));
+      }
+    }
+    const id = crypto.randomUUID();
+    const createdAt = iso(now);
+    const row = {
+      id,
+      sender_id: member.id,
+      recipient_id: peerId,
+      kind: "invite",
+      body: "",
+      payload: { game: "fight", expiresAt: iso(now + INVITE_TTL_MS) },
+      read_at: null,
+      sender_deleted: false,
+      recipient_deleted: false,
+      created_at: createdAt,
+    };
+    rows(await db.from("inbox_messages").insert(row).select("id"));
+    return json({ message: inboxItem(row, member.id) }, 201);
+  }
+
+  async function inboxRead(member: any, peerId: string): Promise<Response> {
+    if (!allowedByLimit(`inbox:read:${member.id}`, 120, 60_000)) throw new AppError("rate_limited", 429);
+    if (!isUuid(peerId)) throw new AppError("invalid_target", 400);
+    const incoming = rows(
+      await db.from("inbox_messages")
+        .select("id,sender_id,recipient_id,read_at,recipient_deleted")
+        .eq("recipient_id", member.id)
+        .limit(500),
+    );
+    const now = iso();
+    let marked = 0;
+    for (const row of incoming) {
+      if (row.sender_id === peerId && !row.read_at && !row.recipient_deleted) {
+        rows(await db.from("inbox_messages").update({ read_at: now }).eq("id", row.id).select("id"));
+        marked += 1;
+      }
+    }
+    return json({ ok: true, marked });
+  }
+
+  async function inboxDelete(member: any, peerId: string): Promise<Response> {
+    if (!allowedByLimit(`inbox:delete:${member.id}`, 20, 60_000)) throw new AppError("rate_limited", 429);
+    if (!isUuid(peerId) || peerId === member.id) throw new AppError("invalid_target", 400);
+    const sent = rows(
+      await db.from("inbox_messages").select("id,recipient_id").eq("sender_id", member.id).limit(500),
+    );
+    for (const row of sent) {
+      if (row.recipient_id === peerId) {
+        rows(await db.from("inbox_messages").update({ sender_deleted: true }).eq("id", row.id).select("id"));
+      }
+    }
+    const received = rows(
+      await db.from("inbox_messages").select("id,sender_id").eq("recipient_id", member.id).limit(500),
+    );
+    for (const row of received) {
+      if (row.sender_id === peerId) {
+        rows(await db.from("inbox_messages").update({ recipient_deleted: true }).eq("id", row.id).select("id"));
+      }
+    }
+    return json({ ok: true });
+  }
+
   async function fishCast(member: any): Promise<Response> {
     if (!allowedByLimit(`game:${member.id}`, 40, 60_000)) throw new AppError("rate_limited", 429);
     const roll = Math.random();
@@ -1407,6 +1654,15 @@ export function application({ db, storage }: { db: Db; storage: Storage }) {
     if (photoMatch && method === "GET") return await photoUrl(auth.member, photoMatch[1], request);
     if (path === "/messages" && method === "GET") return await messagesList();
     if (path === "/messages" && method === "POST") return await messagesCreate(request, auth.member);
+    if (path === "/inbox/unread" && method === "GET") return await inboxUnread(auth.member);
+    if (path === "/inbox" && method === "GET") return await inboxThreads(auth.member);
+    if (path === "/inbox/invite" && method === "POST") return await inboxInvite(request, auth.member);
+    const inboxReadMatch = path.match(/^\/inbox\/([0-9a-f-]{36})\/read$/);
+    if (inboxReadMatch && method === "POST") return await inboxRead(auth.member, inboxReadMatch[1]);
+    const inboxPeerMatch = path.match(/^\/inbox\/([0-9a-f-]{36})$/);
+    if (inboxPeerMatch && method === "GET") return await inboxThread(auth.member, inboxPeerMatch[1]);
+    if (inboxPeerMatch && method === "POST") return await inboxSend(request, auth.member, inboxPeerMatch[1]);
+    if (inboxPeerMatch && method === "DELETE") return await inboxDelete(auth.member, inboxPeerMatch[1]);
     if (path === "/games/rps" && method === "POST") return await rpsPlay(request, auth.member);
     if (path === "/games/fish" && method === "POST") return await fishCast(auth.member);
     if (path === "/games/fight" && method === "POST") return await fightRecord(request, auth.member);

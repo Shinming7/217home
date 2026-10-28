@@ -17,6 +17,10 @@ import type {
   WeatherInfo,
   WeatherKind,
   CitySetting,
+  InboxInviteAlert,
+  InboxMessage,
+  InboxPeer,
+  InboxThread,
 } from "./types";
 import type { Dir } from "../game/types";
 
@@ -77,6 +81,18 @@ export const api = {
     request<{ added: boolean; hearts: number }>("/affinity/touch", post({ targetId })),
   messages: () => request<MessageItem[]>("/messages"),
   postMessage: (body: string) => request<{ message: MessageItem }>("/messages", post({ body })),
+  inboxUnread: () => request<{ count: number; invites: InboxInviteAlert[] }>("/inbox/unread"),
+  inboxThreads: () => request<{ threads: InboxThread[] }>("/inbox"),
+  inboxThread: (peerId: string) =>
+    request<{ peer: InboxPeer; messages: InboxMessage[] }>(`/inbox/${peerId}`),
+  sendInbox: (peerId: string, body: string) =>
+    request<{ message: InboxMessage }>(`/inbox/${peerId}`, post({ body })),
+  inviteToFight: (toId: string) =>
+    request<{ message: InboxMessage }>("/inbox/invite", post({ toId, game: "fight" })),
+  readInbox: (peerId: string) =>
+    request<{ ok: true; marked: number }>(`/inbox/${peerId}/read`, { method: "POST" }),
+  deleteInboxThread: (peerId: string) =>
+    request<{ ok: true }>(`/inbox/${peerId}`, { method: "DELETE" }),
   photos: () => request<PhotoItem[]>("/photos"),
   photoUrl: (id: string, kind: "pixel" | "orig") =>
     request<{ url: string; expiresIn: number }>(`/photos/${id}/url?kind=${kind}`),
@@ -137,6 +153,8 @@ export const ERROR_TEXT: Record<string, string> = {
   forbidden: "只有站长能做这件事",
   invalid_move: "这一手不算，换一个",
   invalid_target: "找不到这位对手",
+  invalid_message: "消息需要 1～200 个字，还不能有奇怪的控制字符",
+  not_found: "这位住户已经不在了，可能搬走了",
   not_enough_players: "至少两位住户坐下才能开局",
   table_full: "牌桌坐满 8 位了，先等一等",
   not_seated: "先在牌桌坐下才能出牌",
