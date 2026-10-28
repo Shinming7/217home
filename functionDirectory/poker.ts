@@ -338,6 +338,24 @@ function finishHand(state: PokerState, now: number) {
   const winners: PokerWinner[] = [];
   let text = "";
 
+  if (!contenders.length) {
+    for (const seat of state.seats) {
+      if (!seat) continue;
+      seat.chips += seat.totalBet;
+      seat.totalBet = 0;
+      seat.bet = 0;
+    }
+    state.phase = "showdown";
+    state.turn = -1;
+    state.deadline = now + SHOWDOWN_MS;
+    state.streetBet = 0;
+    state.pot = 0;
+    state.result = { text: "本手作废，下注退回", winners: [], total: finalPot };
+    state.updatedAt = now;
+    pushLog(state, "本手作废，下注退回");
+    return;
+  }
+
   if (contenders.length === 1) {
     const winner = contenders[0];
     winner.seat.chips += state.pot;
@@ -511,6 +529,7 @@ export function leaveTable(state: PokerState, memberId: string, now: number) {
     seat.lastAction = "离开";
     pushLog(state, `${seat.nickname} 起身离开，这手牌弃掉`);
     if (wasTurn) afterAction(state, now);
+    else if (inHandSeats(state).length <= 1) finishHand(state, now);
   } else {
     state.seats[index] = null;
     pushLog(state, `${seat.nickname} 离开了牌桌`);
@@ -617,8 +636,16 @@ export function advance(state: PokerState, now: number) {
     if (now < state.deadline) return;
     const seat = state.seats[state.turn];
     if (!seat || seat.folded || !seat.inHand) {
+      if (inHandSeats(state).length === 0) {
+        finishHand(state, now);
+        return;
+      }
       state.turn = nextActive(state, state.turn);
       state.deadline = now + TURN_MS;
+      return;
+    }
+    if (inHandSeats(state).length <= 1) {
+      finishHand(state, now);
       return;
     }
     const toCall = Math.max(0, state.streetBet - seat.bet);

@@ -1709,6 +1709,7 @@ export function application({ db, storage }: { db: Db; storage: Storage }) {
       return await route(ctx);
     } catch (error) {
       if (error instanceof AppError) return json({ error: error.code }, error.status);
+      console.error("unhandled_error", error);
       return json({ error: "service_unavailable" }, 503);
     }
   };
