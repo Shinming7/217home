@@ -44,6 +44,19 @@ export const SOLIDS: Rect[] = [
 
 export const PLAYER_START = { x: 196, y: 228 };
 
+export const SOFA_SEAT = { x: 76, y: 202 };
+export const SOFA_APPROACH = { x: 76, y: 232 };
+
+export const DOG_START = { x: 110, y: 150 };
+
+export const DOG_LINES = [
+  "汪！尾巴摇成螺旋桨了。",
+  "小狗叼来一只拖鞋，又放下了。",
+  "呼噜呼噜……被摸得很舒服。",
+  "小狗绕着你转了一圈，想让你再摸一次。",
+  "汪呜——它把脑袋凑过来蹭了蹭。",
+];
+
 export const PLAYER_LOOK: CharacterLook = {
   hair: PAL.navy,
   hairDark: PAL.ink,

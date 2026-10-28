@@ -8,10 +8,12 @@ type RoomCanvasProps = {
   peers: PeerInput[];
   phase: Phase;
   weather: WeatherKind;
+  photoPreviews?: (HTMLImageElement | null)[];
   paused?: boolean;
   onSelectMember: (id: string) => void;
   onEnterCage?: () => void;
   onOpenPhotos?: () => void;
+  onOpenBoard?: () => void;
   onOpenPoker?: () => void;
   onEngine?: (engine: RoomEngine | null) => void;
 };
@@ -22,10 +24,12 @@ export function RoomCanvas({
   peers,
   phase,
   weather,
+  photoPreviews,
   paused = false,
   onSelectMember,
   onEnterCage,
   onOpenPhotos,
+  onOpenBoard,
   onOpenPoker,
   onEngine,
 }: RoomCanvasProps) {
@@ -35,9 +39,10 @@ export function RoomCanvas({
   const engineCbRef = useRef(onEngine);
   const cageRef = useRef(onEnterCage);
   const photosRef = useRef(onOpenPhotos);
+  const boardRef = useRef(onOpenBoard);
   const pokerRef = useRef(onOpenPoker);
   const pausedRef = useRef(paused);
-  const initialRef = useRef({ selfLook, start, phase, weather, peers });
+  const initialRef = useRef({ selfLook, start, phase, weather, peers, photoPreviews });
   const padRef = useRef<HTMLDivElement | null>(null);
   const [knob, setKnob] = useState({ x: 0, y: 0 });
   const dragging = useRef(false);
@@ -47,6 +52,7 @@ export function RoomCanvas({
     engineCbRef.current = onEngine;
     cageRef.current = onEnterCage;
     photosRef.current = onOpenPhotos;
+    boardRef.current = onOpenBoard;
     pokerRef.current = onOpenPoker;
     pausedRef.current = paused;
   });
@@ -63,9 +69,11 @@ export function RoomCanvas({
       onSelectMember: (id) => selectRef.current(id),
       onEnterCage: () => cageRef.current?.(),
       onOpenPhotos: () => photosRef.current?.(),
+      onOpenBoard: () => boardRef.current?.(),
       onOpenPoker: () => pokerRef.current?.(),
     });
     engine.setPeers(initial.peers);
+    engine.setPhotoPreviews(initial.photoPreviews ?? []);
     engine.setPaused(pausedRef.current);
     engineRef.current = engine;
     engine.start();
@@ -73,9 +81,11 @@ export function RoomCanvas({
 
     const fit = () => {
       const stage = canvas.closest(".stage") as HTMLElement | null;
-      const rect = stage?.getBoundingClientRect();
-      const maxW = Math.min((rect?.width ?? window.innerWidth) - 36, 1600);
-      const maxH = Math.max(220, (rect?.height ?? window.innerHeight - 180) - 16);
+      // clientWidth/clientHeight 是布局尺寸，不受强制横屏的 rotate 影响
+      const stageW = stage?.clientWidth ?? window.innerWidth;
+      const stageH = stage?.clientHeight ?? window.innerHeight - 180;
+      const maxW = Math.min(stageW - 36, 1600);
+      const maxH = Math.max(220, stageH - 16);
       const raw = Math.min(maxW / 384, maxH / 256);
       const scale = raw >= 2 ? Math.min(4, Math.floor(raw)) : Math.max(0.6, raw);
       canvas.style.width = `${Math.round(384 * scale)}px`;
@@ -115,6 +125,10 @@ export function RoomCanvas({
   useEffect(() => {
     engineRef.current?.setPeers(peers);
   }, [peers]);
+
+  useEffect(() => {
+    engineRef.current?.setPhotoPreviews(photoPreviews ?? []);
+  }, [photoPreviews]);
 
   const applyStick = (clientX: number, clientY: number) => {
     const pad = padRef.current;

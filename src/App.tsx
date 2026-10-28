@@ -32,6 +32,15 @@ const WEATHER_LABEL: Record<WeatherKind, string> = {
   fog: "雾",
 };
 
+function loadImage(url: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => resolve(null);
+    image.src = url;
+  });
+}
+
 export default function App() {
   const [stage, setStage] = useState<Stage>("boot");
   const [self, setSelf] = useState<SelfMember | null>(null);
@@ -44,6 +53,7 @@ export default function App() {
   const [toast, setToast] = useState("");
   const [toastWarn, setToastWarn] = useState(false);
   const [quitArmed, setQuitArmed] = useState(false);
+  const [photoPreviews, setPhotoPreviews] = useState<(HTMLImageElement | null)[]>([]);
   const engineRef = useRef<RoomEngine | null>(null);
   const toastTimer = useRef(0);
   const quitTimer = useRef(0);
@@ -119,6 +129,29 @@ export default function App() {
   useEffect(() => {
     if (stage === "room") void refreshMembers();
   }, [stage, refreshMembers]);
+
+  const refreshPhotoPreviews = useCallback(async () => {
+    try {
+      const list = await api.photos();
+      const images = await Promise.all(
+        list.slice(0, 3).map(async (photo) => {
+          try {
+            const { url } = await api.photoUrl(photo.id, "pixel");
+            return await loadImage(url);
+          } catch {
+            return null;
+          }
+        }),
+      );
+      setPhotoPreviews(images);
+    } catch {
+      // 预览失败时保留墙上的装饰画，不影响房间
+    }
+  }, []);
+
+  useEffect(() => {
+    if (stage === "room") void refreshPhotoPreviews();
+  }, [stage, refreshPhotoPreviews]);
 
   const getPosition = useCallback((): { x: number; y: number; dir: Dir } => {
     return engineRef.current?.getPlayer() ?? { x: 196, y: 228, dir: "down" };
@@ -313,6 +346,7 @@ export default function App() {
             peers={peers}
             phase={phase}
             weather={weather}
+            photoPreviews={photoPreviews}
             paused={paused}
             onSelectMember={(id) => void openProfile(id)}
             onEnterCage={() => {
@@ -320,6 +354,7 @@ export default function App() {
               setFightOpen(true);
             }}
             onOpenPhotos={() => setPanel("photos")}
+            onOpenBoard={() => setPanel("board")}
             onOpenPoker={() => setPanel("poker")}
             onEngine={(engine) => {
               engineRef.current = engine;
@@ -359,7 +394,7 @@ export default function App() {
 
       <footer className="hintbar">
         <p>
-          <span className="key">WASD</span> / <span className="key">方向键</span> 移动 · 点击小人打开档案 · 照片墙、牌桌、八角笼都能互动
+          <span className="key">WASD</span> / <span className="key">方向键</span> 移动 · 点击小人打开档案 · 三幅画看照片墙、软木板看留言、沙发能坐、小狗能摸
         </p>
         <p className="fineprint">
           {offline
@@ -396,7 +431,17 @@ export default function App() {
       ) : null}
 
       {panel === "photos" ? (
-        <PhotoWall isOwner={self.role === "owner"} onClose={() => setPanel(null)} onChanged={() => void refreshMembers()} />
+        <PhotoWall
+          isOwner={self.role === "owner"}
+          onClose={() => {
+            setPanel(null);
+            void refreshPhotoPreviews();
+          }}
+          onChanged={() => {
+            void refreshMembers();
+            void refreshPhotoPreviews();
+          }}
+        />
       ) : null}
       {panel === "board" ? (
         <MessageBoard isOwner={self.role === "owner"} onClose={() => setPanel(null)} onChanged={() => void refreshMembers()} />

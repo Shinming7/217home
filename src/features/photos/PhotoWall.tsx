@@ -156,7 +156,7 @@ export function PhotoWall({ isOwner, onClose, onChanged }: PhotoWallProps) {
     <Panel kicker="PHOTO WALL · 217" title="照片墙" wide onClose={onClose}>
       <div className="pw-toolbar">
         <p className="panel-note">
-          站到软木板前，用第一人称看看大家挂上去的像素小画。点开任意一张，就能看到没打码的原图。
+          站在墙上的三幅画前，用第一人称看看大家挂上去的像素小画。点开任意一张，就能看到没打码的原图。
         </p>
         <div className="pw-toolbar-actions">
           <span className={filled ? "pw-count full" : "pw-count"}>
@@ -256,7 +256,7 @@ export function PhotoWall({ isOwner, onClose, onChanged }: PhotoWallProps) {
         </div>
         <div className="pw-vignette" aria-hidden="true" />
         <div className="pw-hud">
-          <span>{loading ? "正在走向照片墙…" : "第一人称 · 站在软木板前"}</span>
+          <span>{loading ? "正在走向照片墙…" : "第一人称 · 三幅画前"}</span>
           <span>
             {photos.length} / {WALL_LIMIT} 张
           </span>

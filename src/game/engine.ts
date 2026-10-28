@@ -1,8 +1,25 @@
-import { getCharacterSprite } from "./character";
+import { getCharacterSprite, getSitSprite } from "./character";
+import { getDogSprite, type DogFrame } from "./dog";
 import { fallbackLook } from "./looks";
 import { PAL } from "./palette";
-import { createPropCanvas, createRoomCanvas, drawWindow } from "./roomArt";
-import { BOUNDS, CORKBOARD, OCTAGON, PLAYER_LOOK, PLAYER_START, POKER_TABLE, PROPS, ROOM, SOLIDS, WINDOW } from "./roomData";
+import { createPropCanvas, createRoomCanvas, createSofaLayers, drawWindow } from "./roomArt";
+import {
+  BOUNDS,
+  CORKBOARD,
+  DOG_LINES,
+  DOG_START,
+  OCTAGON,
+  PHOTO_FRAMES,
+  PLAYER_LOOK,
+  PLAYER_START,
+  POKER_TABLE,
+  PROPS,
+  ROOM,
+  SOFA_APPROACH,
+  SOFA_SEAT,
+  SOLIDS,
+  WINDOW,
+} from "./roomData";
 import type { CharacterLook, Dir, PeerInput, Phase, Rect, WalkFrame, WeatherKind } from "./types";
 
 type Point = { x: number; y: number };
@@ -23,6 +40,21 @@ type Peer = {
   online: boolean;
 };
 
+type Dog = {
+  x: number;
+  y: number;
+  dir: Dir;
+  frame: DogFrame;
+  target: Point;
+  path: Point[];
+  wait: number;
+  walkClock: number;
+  moving: boolean;
+  pettedUntil: number;
+};
+
+type Heart = { x: number; y: number; drift: number; until: number };
+
 type Renderable = { depth: number; draw: () => void };
 
 type Bubble = { id: string; text: string; until: number };
@@ -38,6 +70,7 @@ export type RoomEngineOptions = {
   onSelectMember?: (id: string) => void;
   onEnterCage?: () => void;
   onOpenPhotos?: () => void;
+  onOpenBoard?: () => void;
   onOpenPoker?: () => void;
 };
 
@@ -83,6 +116,24 @@ export class RoomEngine {
     moving: false,
   };
   private peers = new Map<string, Peer>();
+  private dog: Dog = {
+    x: DOG_START.x,
+    y: DOG_START.y,
+    dir: "left",
+    frame: "idle",
+    target: { x: DOG_START.x, y: DOG_START.y },
+    path: [],
+    wait: 1.2,
+    walkClock: 0,
+    moving: false,
+    pettedUntil: 0,
+  };
+  private hearts: Heart[] = [];
+  private sitting = false;
+  private autoWalk: Point[] = [];
+  private photoPreviews: (HTMLImageElement | null)[] = [];
+  private sofaBack: HTMLCanvasElement;
+  private sofaFront: HTMLCanvasElement;
   private phase: Phase = "dusk";
   private weather: WeatherKind = "clear";
   private paused = false;
@@ -90,6 +141,9 @@ export class RoomEngine {
   private hoverPeerId: string | null = null;
   private hoverCage = false;
   private hoverPhotos = false;
+  private hoverBoard = false;
+  private hoverSofa = false;
+  private hoverDog = false;
   private hoverPoker = false;
   private raf = 0;
   private last = 0;
@@ -114,6 +168,9 @@ export class RoomEngine {
     for (const prop of PROPS) {
       this.propCanvases.set(prop.id, createPropCanvas(prop));
     }
+    const sofa = createSofaLayers();
+    this.sofaBack = sofa.back;
+    this.sofaFront = sofa.front;
     this.lightCanvas = document.createElement("canvas");
     this.lightCanvas.width = ROOM.width;
     this.lightCanvas.height = ROOM.height;
@@ -214,6 +271,10 @@ export class RoomEngine {
     for (const id of [...this.peers.keys()]) {
       if (!seen.has(id)) this.peers.delete(id);
     }
+  }
+
+  setPhotoPreviews(images: (HTMLImageElement | null)[]) {
+    this.photoPreviews = images.slice(0, PHOTO_FRAMES.length);
   }
 
   getPlayer(): { x: number; y: number; dir: Dir } {
@@ -335,6 +396,65 @@ export class RoomEngine {
     peer.wait = 1.2 + Math.random() * 2;
   }
 
+  private pickDogTarget() {
+    const dog = this.dog;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const cell = this.walkable[Math.floor(Math.random() * this.walkable.length)];
+      if (!cell) break;
+      const nx = (cell.x - (OCTAGON.x + OCTAGON.w / 2)) / (OCTAGON.w / 2 + 10);
+      const ny = (cell.y - (OCTAGON.y + OCTAGON.h / 2)) / (OCTAGON.h / 2 + 10);
+      if (nx * nx + ny * ny < 1.4) continue;
+      if (Math.hypot(cell.x - dog.x, cell.y - dog.y) < 36) continue;
+      const path = this.findPath({ x: dog.x, y: dog.y }, cell);
+      if (path.length) {
+        dog.path = path;
+        return;
+      }
+    }
+    dog.wait = 1.8 + Math.random() * 2.4;
+  }
+
+  private sitDown() {
+    this.sitting = true;
+    this.player.x = SOFA_SEAT.x;
+    this.player.y = SOFA_SEAT.y;
+    this.player.dir = "down";
+    this.player.frame = "idle";
+    this.player.moving = false;
+    this.player.walkClock = 0;
+  }
+
+  private standUp() {
+    this.sitting = false;
+    this.autoWalk = [];
+    this.player.x = SOFA_APPROACH.x;
+    this.player.y = SOFA_APPROACH.y;
+    this.player.frame = "idle";
+    this.player.moving = false;
+  }
+
+  private petDog() {
+    const now = performance.now();
+    const dog = this.dog;
+    dog.pettedUntil = now + 2600;
+    dog.path = [];
+    dog.wait = 2.6;
+    dog.dir = dirOf(this.player.x - dog.x, this.player.y - dog.y, dog.dir);
+    this.bubble = {
+      id: "dog",
+      text: DOG_LINES[Math.floor(Math.random() * DOG_LINES.length)],
+      until: now + 3200,
+    };
+    for (let index = 0; index < 3; index += 1) {
+      this.hearts.push({
+        x: dog.x + (index - 1) * 5 + Math.random() * 2,
+        y: dog.y - 13 - index * 2,
+        drift: (Math.random() - 0.5) * 8,
+        until: now + 1400 + index * 240,
+      });
+    }
+  }
+
   private collides(x: number, y: number): boolean {
     if (x < BOUNDS.minX || x > BOUNDS.maxX || y < BOUNDS.minY || y > BOUNDS.maxY) return true;
     const box: Rect = { x: x - 5, y: y - 9, w: 10, h: 9 };
@@ -343,6 +463,7 @@ export class RoomEngine {
 
   private update(dt: number) {
     const keys = this.keys;
+    const now = performance.now();
     if (!this.paused && !isTypingTarget(document.activeElement)) {
       const right = keys.has("arrowright") || keys.has("d") ? 1 : 0;
       const left = keys.has("arrowleft") || keys.has("a") ? 1 : 0;
@@ -356,19 +477,51 @@ export class RoomEngine {
         dy /= magnitude;
       }
       const moving = Math.abs(dx) > 0.08 || Math.abs(dy) > 0.08;
-      this.player.moving = moving;
-      if (moving) {
-        this.player.dir = dirOf(dx, dy, this.player.dir);
-        const speed = 74;
-        const nx = this.player.x + dx * speed * dt;
-        if (!this.collides(nx, this.player.y)) this.player.x = nx;
-        const ny = this.player.y + dy * speed * dt;
-        if (!this.collides(this.player.x, ny)) this.player.y = ny;
-        this.player.walkClock += dt;
-        this.player.frame = Math.floor(this.player.walkClock / 0.17) % 2 === 0 ? "a" : "b";
-      } else {
-        this.player.frame = "idle";
-        this.player.walkClock = 0;
+
+      if (this.sitting) {
+        if (moving) {
+          this.sitting = false;
+          this.player.x = SOFA_APPROACH.x;
+          this.player.y = SOFA_APPROACH.y;
+        } else {
+          this.player.frame = "idle";
+          this.player.moving = false;
+        }
+      }
+
+      if (!this.sitting) {
+        this.player.moving = moving;
+        if (moving) {
+          this.autoWalk = [];
+          this.player.dir = dirOf(dx, dy, this.player.dir);
+          const speed = 74;
+          const nx = this.player.x + dx * speed * dt;
+          if (!this.collides(nx, this.player.y)) this.player.x = nx;
+          const ny = this.player.y + dy * speed * dt;
+          if (!this.collides(this.player.x, ny)) this.player.y = ny;
+          this.player.walkClock += dt;
+          this.player.frame = Math.floor(this.player.walkClock / 0.17) % 2 === 0 ? "a" : "b";
+        } else if (this.autoWalk.length) {
+          const target = this.autoWalk[0];
+          const adx = target.x - this.player.x;
+          const ady = target.y - this.player.y;
+          const dist = Math.hypot(adx, ady);
+          if (dist < 1.2) {
+            this.autoWalk.shift();
+            if (!this.autoWalk.length) this.sitDown();
+          } else {
+            const step = Math.min(dist, 74 * dt);
+            this.player.x += (adx / dist) * step;
+            this.player.y += (ady / dist) * step;
+            this.player.dir = dirOf(adx, ady, this.player.dir);
+            this.player.walkClock += dt;
+            this.player.frame = Math.floor(this.player.walkClock / 0.17) % 2 === 0 ? "a" : "b";
+            this.player.moving = true;
+          }
+        } else {
+          this.player.frame = "idle";
+          this.player.walkClock = 0;
+        }
       }
     }
 
@@ -434,7 +587,48 @@ export class RoomEngine {
       peer.moving = true;
     }
 
-    if (this.bubble && performance.now() > this.bubble.until) this.bubble = null;
+    const dog = this.dog;
+    if (now < dog.pettedUntil) {
+      dog.path = [];
+      dog.moving = false;
+      dog.dir = dirOf(this.player.x - dog.x, this.player.y - dog.y, dog.dir);
+      dog.frame = Math.floor(now / 220) % 2 === 0 ? "sit" : "wag";
+    } else if (dog.wait > 0) {
+      dog.wait -= dt;
+      dog.moving = false;
+      dog.frame = "idle";
+      if (dog.wait <= 0 && dog.path.length === 0) this.pickDogTarget();
+    } else {
+      const target = dog.path[0];
+      if (!target) {
+        dog.moving = false;
+        dog.frame = "idle";
+        dog.wait = 1.6 + Math.random() * 2.4;
+      } else {
+        const ddx = target.x - dog.x;
+        const ddy = target.y - dog.y;
+        const dist = Math.hypot(ddx, ddy);
+        if (dist < 1.2) {
+          dog.path.shift();
+          if (!dog.path.length) dog.wait = 1.8 + Math.random() * 3;
+          dog.frame = "idle";
+          dog.moving = false;
+        } else {
+          const step = Math.min(dist, 22 * dt);
+          dog.x += (ddx / dist) * step;
+          dog.y += (ddy / dist) * step;
+          dog.dir = dirOf(ddx, ddy, dog.dir);
+          dog.walkClock += dt;
+          dog.frame = Math.floor(dog.walkClock / 0.24) % 2 === 0 ? "a" : "b";
+          dog.moving = true;
+        }
+      }
+    }
+
+    for (const heart of this.hearts) heart.y -= 9 * dt;
+    this.hearts = this.hearts.filter((heart) => now < heart.until);
+
+    if (this.bubble && now > this.bubble.until) this.bubble = null;
   }
 
   private render(now: number) {
@@ -442,12 +636,18 @@ export class RoomEngine {
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, ROOM.width, ROOM.height);
     ctx.drawImage(this.roomCanvas, 0, 0);
+    this.drawPhotoPreviews(ctx);
     drawWindow(ctx, this.phase, now / 1000);
     this.drawWeather(ctx, now / 1000);
     this.drawWindowBeam(ctx);
 
     const items: Renderable[] = [];
     for (const prop of PROPS) {
+      if (prop.kind === "sofa") {
+        items.push({ depth: prop.y + 18, draw: () => ctx.drawImage(this.sofaBack, prop.x, prop.y) });
+        items.push({ depth: prop.y + prop.h, draw: () => ctx.drawImage(this.sofaFront, prop.x, prop.y) });
+        continue;
+      }
       const art = this.propCanvases.get(prop.id);
       if (!art) continue;
       items.push({ depth: prop.y + prop.h, draw: () => ctx.drawImage(art, prop.x, prop.y) });
@@ -455,8 +655,11 @@ export class RoomEngine {
     items.push({
       depth: this.player.y,
       draw: () =>
-        this.drawCharacter(ctx, this.player.x, this.player.y, this.selfLook, this.player.dir, this.player.frame),
+        this.sitting
+          ? this.drawSitting(ctx)
+          : this.drawCharacter(ctx, this.player.x, this.player.y, this.selfLook, this.player.dir, this.player.frame),
     });
+    items.push({ depth: this.dog.y, draw: () => this.drawDog(ctx) });
     for (const peer of this.peers.values()) {
       items.push({
         depth: peer.y,
@@ -468,14 +671,34 @@ export class RoomEngine {
 
     this.drawLighting(ctx);
     this.drawVignette(ctx);
+    this.drawHearts(ctx);
     this.drawLabels(ctx);
     this.drawBubble(ctx);
     if (this.hoverPhotos) {
       ctx.save();
       ctx.strokeStyle = PAL.lemon;
       ctx.lineWidth = 1;
+      for (const frame of PHOTO_FRAMES) {
+        ctx.strokeRect(frame.x - 2.5, frame.y - 2.5, frame.w + 5, frame.h + 5);
+      }
+      ctx.restore();
+    }
+    if (this.hoverBoard) {
+      ctx.save();
+      ctx.strokeStyle = PAL.lemon;
+      ctx.lineWidth = 1;
       ctx.strokeRect(CORKBOARD.x - 3.5, CORKBOARD.y - 3.5, CORKBOARD.w + 7, CORKBOARD.h + 7);
       ctx.restore();
+    }
+    if (this.hoverSofa) {
+      const sofa = PROPS.find((prop) => prop.kind === "sofa");
+      if (sofa) {
+        ctx.save();
+        ctx.strokeStyle = PAL.lemon;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(sofa.x - 3.5, sofa.y - 3.5, sofa.w + 7, sofa.h + 7);
+        ctx.restore();
+      }
     }
     if (this.hoverPoker) {
       ctx.save();
@@ -562,6 +785,58 @@ export class RoomEngine {
     ctx.drawImage(sprite, rx - 8, ry - 24 - bob);
   }
 
+  private drawSitting(ctx: CanvasRenderingContext2D) {
+    const rx = Math.round(this.player.x);
+    const ry = Math.round(this.player.y);
+    const sprite = getSitSprite(this.selfLook);
+    ctx.drawImage(sprite, rx - 8, ry - 18);
+  }
+
+  private drawDog(ctx: CanvasRenderingContext2D) {
+    const rx = Math.round(this.dog.x);
+    const ry = Math.round(this.dog.y);
+    ctx.fillStyle = "rgba(24,20,37,0.24)";
+    ctx.fillRect(rx - 6, ry - 2, 12, 4);
+    ctx.fillRect(rx - 4, ry + 2, 8, 1);
+    const sprite = getDogSprite(this.dog.dir, this.dog.frame);
+    ctx.drawImage(sprite, rx - 8, ry - 12);
+  }
+
+  private drawPhotoPreviews(ctx: CanvasRenderingContext2D) {
+    for (let index = 0; index < PHOTO_FRAMES.length; index += 1) {
+      const image = this.photoPreviews[index];
+      if (!image || !image.complete || !image.naturalWidth) continue;
+      const frame = PHOTO_FRAMES[index];
+      const ix = frame.x + 4;
+      const iy = frame.y + 4;
+      const iw = frame.w - 8;
+      const ih = frame.h - 8;
+      const scale = Math.max(iw / image.naturalWidth, ih / image.naturalHeight);
+      const sw = iw / scale;
+      const sh = ih / scale;
+      const sx = (image.naturalWidth - sw) / 2;
+      const sy = (image.naturalHeight - sh) / 2;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(image, sx, sy, sw, sh, ix, iy, iw, ih);
+    }
+  }
+
+  private drawHearts(ctx: CanvasRenderingContext2D) {
+    const now = performance.now();
+    for (const heart of this.hearts) {
+      const x = Math.round(heart.x + Math.sin(now / 190 + heart.drift) * 2);
+      const y = Math.round(heart.y);
+      ctx.fillStyle = PAL.cherry;
+      ctx.fillRect(x - 3, y - 4, 2, 2);
+      ctx.fillRect(x + 1, y - 4, 2, 2);
+      ctx.fillRect(x - 3, y - 2, 6, 2);
+      ctx.fillRect(x - 2, y, 4, 1);
+      ctx.fillRect(x - 1, y + 1, 2, 1);
+      ctx.fillStyle = "rgba(255,255,255,0.65)";
+      ctx.fillRect(x - 3, y - 4, 1, 1);
+    }
+  }
+
   private drawLighting(ctx: CanvasRenderingContext2D) {
     if (this.phase === "day") return;
     if (this.phase === "morning") {
@@ -631,27 +906,52 @@ export class RoomEngine {
       ctx.fillStyle = fill;
       ctx.fillText(text, Math.round(x), Math.round(y));
     };
-    label("你", this.player.x, this.player.y - 27, PAL.cyan);
+    label("你", this.player.x, this.player.y - (this.sitting ? 20 : 27), PAL.cyan);
     for (const peer of this.peers.values()) {
       const near = Math.hypot(peer.x - this.player.x, peer.y - this.player.y) < 58;
       if (!near && this.hoverPeerId !== peer.id) continue;
       const crowded = Math.abs(peer.x - this.player.x) < 26 && Math.abs(peer.y - this.player.y) < 30;
       label(peer.nickname, peer.x, peer.y - (crowded ? 40 : 27), peer.online ? PAL.cream : PAL.steel);
     }
+    if (this.hoverDog) {
+      label("小狗", this.dog.x, this.dog.y - 17, PAL.amber);
+      this.drawHint(ctx, this.dog.x, this.dog.y - 34, "摸摸小狗");
+    }
+    if (this.hoverSofa) {
+      const sofa = PROPS.find((prop) => prop.kind === "sofa");
+      if (sofa) {
+        this.drawHint(
+          ctx,
+          sofa.x + sofa.w / 2,
+          sofa.y - (this.sitting ? 34 : 20),
+          this.sitting ? "点击起身" : "点击坐下",
+        );
+      }
+    }
+    if (this.hoverPhotos) {
+      this.drawHint(ctx, PHOTO_FRAMES[1].x + PHOTO_FRAMES[1].w / 2, 48, "点击看照片墙");
+    }
+    if (this.hoverBoard) {
+      this.drawHint(ctx, CORKBOARD.x + CORKBOARD.w / 2, 56, "点击看留言板");
+    }
     if (this.hoverCage) {
-      const cx = OCTAGON.x + OCTAGON.w / 2;
-      const text = "点击进入八角笼";
-      const width = Math.ceil(ctx.measureText(text).width) + 12;
-      const x = Math.round(cx - width / 2);
-      const y = OCTAGON.y - 36;
-      ctx.fillStyle = PAL.ink;
-      this.blockRect(ctx, x - 1, y - 1, width + 2, 16);
-      ctx.fillStyle = PAL.cream;
-      this.blockRect(ctx, x + 1, y + 1, width - 2, 12);
-      ctx.fillStyle = PAL.ink;
-      ctx.fillText(text, cx, y + 11);
+      this.drawHint(ctx, OCTAGON.x + OCTAGON.w / 2, OCTAGON.y - 36, "点击进入八角笼");
     }
     ctx.restore();
+  }
+
+  private drawHint(ctx: CanvasRenderingContext2D, cx: number, topY: number, text: string) {
+    ctx.font = '10px "FusionPixel", monospace';
+    ctx.textAlign = "center";
+    const width = Math.ceil(ctx.measureText(text).width) + 12;
+    const x = Math.max(4, Math.min(ROOM.width - width - 4, Math.round(cx - width / 2)));
+    const y = Math.max(2, Math.round(topY));
+    ctx.fillStyle = PAL.ink;
+    this.blockRect(ctx, x - 1, y - 1, width + 2, 16);
+    ctx.fillStyle = PAL.cream;
+    this.blockRect(ctx, x + 1, y + 1, width - 2, 12);
+    ctx.fillStyle = PAL.ink;
+    ctx.fillText(text, x + width / 2, y + 11);
   }
 
   private drawBubble(ctx: CanvasRenderingContext2D) {
@@ -659,10 +959,12 @@ export class RoomEngine {
     const anchor =
       this.bubble.id === "self"
         ? { x: this.player.x, y: this.player.y }
-        : (() => {
-            const peer = this.peers.get(this.bubble!.id);
-            return peer ? { x: peer.x, y: peer.y } : null;
-          })();
+        : this.bubble.id === "dog"
+          ? { x: this.dog.x, y: this.dog.y }
+          : (() => {
+              const peer = this.peers.get(this.bubble!.id);
+              return peer ? { x: peer.x, y: peer.y } : null;
+            })();
     if (!anchor) return;
     ctx.save();
     ctx.font = '10px "FusionPixel", monospace';
@@ -746,7 +1048,27 @@ export class RoomEngine {
   }
 
   private photoWallAt(x: number, y: number): boolean {
+    return PHOTO_FRAMES.some(
+      (frame) =>
+        x >= frame.x - 4 &&
+        x <= frame.x + frame.w + 4 &&
+        y >= frame.y - 4 &&
+        y <= frame.y + frame.h + 4,
+    );
+  }
+
+  private boardAt(x: number, y: number): boolean {
     return x >= CORKBOARD.x - 4 && x <= CORKBOARD.x + CORKBOARD.w + 4 && y >= CORKBOARD.y - 4 && y <= CORKBOARD.y + CORKBOARD.h + 4;
+  }
+
+  private sofaAt(x: number, y: number): boolean {
+    const sofa = PROPS.find((prop) => prop.kind === "sofa");
+    if (!sofa) return false;
+    return x >= sofa.x - 4 && x <= sofa.x + sofa.w + 4 && y >= sofa.y - 6 && y <= sofa.y + sofa.h + 4;
+  }
+
+  private dogAt(x: number, y: number): boolean {
+    return x >= this.dog.x - 9 && x <= this.dog.x + 9 && y >= this.dog.y - 13 && y <= this.dog.y + 1;
   }
 
   private pokerAt(x: number, y: number): boolean {
@@ -776,17 +1098,45 @@ export class RoomEngine {
     const { x, y } = this.roomPoint(event.clientX, event.clientY);
     const peer = this.hitPeer(x, y);
     this.hoverPeerId = peer ? peer.id : null;
-    this.hoverCage = !peer && this.cageAt(x, y);
-    this.hoverPhotos = !peer && this.photoWallAt(x, y);
-    this.hoverPoker = !peer && !this.hoverPhotos && this.pokerAt(x, y);
-    this.canvas.style.cursor = peer || this.hoverCage || this.hoverPhotos || this.hoverPoker ? "pointer" : "default";
+    this.hoverDog = !peer && this.dogAt(x, y);
+    this.hoverSofa = !peer && !this.hoverDog && this.sofaAt(x, y);
+    this.hoverPhotos = !peer && !this.hoverDog && !this.hoverSofa && this.photoWallAt(x, y);
+    this.hoverBoard =
+      !peer && !this.hoverDog && !this.hoverSofa && !this.hoverPhotos && this.boardAt(x, y);
+    this.hoverPoker =
+      !peer &&
+      !this.hoverDog &&
+      !this.hoverSofa &&
+      !this.hoverPhotos &&
+      !this.hoverBoard &&
+      this.pokerAt(x, y);
+    this.hoverCage =
+      !peer &&
+      !this.hoverDog &&
+      !this.hoverSofa &&
+      !this.hoverPhotos &&
+      !this.hoverBoard &&
+      !this.hoverPoker &&
+      this.cageAt(x, y);
+    const interactive =
+      peer ||
+      this.hoverDog ||
+      this.hoverSofa ||
+      this.hoverPhotos ||
+      this.hoverBoard ||
+      this.hoverPoker ||
+      this.hoverCage;
+    this.canvas.style.cursor = interactive ? "pointer" : "default";
   };
 
   private onMouseLeave = () => {
     this.hoverPeerId = null;
-    this.hoverCage = false;
+    this.hoverDog = false;
+    this.hoverSofa = false;
     this.hoverPhotos = false;
+    this.hoverBoard = false;
     this.hoverPoker = false;
+    this.hoverCage = false;
     this.canvas.style.cursor = "default";
   };
 
@@ -794,11 +1144,31 @@ export class RoomEngine {
     const { x, y } = this.roomPoint(event.clientX, event.clientY);
     const peer = this.hitPeer(x, y);
     if (peer) {
+      this.autoWalk = [];
       this.opts.onSelectMember?.(peer.id);
       return;
     }
+    if (this.dogAt(x, y)) {
+      this.autoWalk = [];
+      this.petDog();
+      return;
+    }
+    if (this.sofaAt(x, y)) {
+      if (this.sitting) {
+        this.standUp();
+        return;
+      }
+      const path = this.findPath({ x: this.player.x, y: this.player.y }, SOFA_APPROACH);
+      this.autoWalk = path.length ? path : [{ x: SOFA_APPROACH.x, y: SOFA_APPROACH.y }];
+      return;
+    }
+    this.autoWalk = [];
     if (this.photoWallAt(x, y)) {
       this.opts.onOpenPhotos?.();
+      return;
+    }
+    if (this.boardAt(x, y)) {
+      this.opts.onOpenBoard?.();
       return;
     }
     if (this.pokerAt(x, y)) {

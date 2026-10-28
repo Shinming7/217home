@@ -144,63 +144,90 @@ function drawOctagon(ctx: Ctx) {
   drawFightLogo(ctx, cx, cy);
 
   const points = octagonPoints(cx, cy, rx - 4, ry - 3);
-  const back = [4, 5, 6, 7];
-  const fenceHeight = 18;
 
   const edgeY = (a: Point, b: Point, xx: number) =>
     a.y + ((b.y - a.y) * (xx - a.x)) / (b.x - a.x);
-  for (let i = 0; i < back.length - 1; i += 1) {
-    const a = points[back[i]];
-    const b = points[back[i + 1]];
+
+  const drawMesh = (a: Point, b: Point, height: number, alpha: number) => {
     const x1 = Math.round(Math.min(a.x, b.x));
     const x2 = Math.round(Math.max(a.x, b.x));
+    if (x1 === x2) {
+      const top = Math.round(Math.min(a.y, b.y)) - height;
+      const bottom = Math.round(Math.max(a.y, b.y));
+      ctx.fillStyle = `rgba(139,155,180,${alpha})`;
+      ctx.fillRect(x1, top, 1, bottom - top);
+      for (let yy = top + 3; yy < bottom; yy += 4) {
+        ctx.fillStyle = `rgba(192,203,220,${alpha * 0.8})`;
+        ctx.fillRect(x1 - 1, yy, 3, 1);
+      }
+      return;
+    }
+    const xa = a.x <= b.x ? a : b;
+    const xb = a.x <= b.x ? b : a;
     for (let xx = x1; xx <= x2; xx += 1) {
-      const baseY = Math.round(edgeY(a, b, xx));
-      ctx.fillStyle = "rgba(139,155,180,0.13)";
-      ctx.fillRect(xx, baseY - fenceHeight, 1, fenceHeight);
-      ctx.fillStyle = "rgba(192,203,220,0.62)";
-      ctx.fillRect(xx, baseY - fenceHeight, 1, 1);
-      ctx.fillRect(xx, baseY - Math.round(fenceHeight * 0.5), 1, 1);
-      ctx.fillRect(xx, baseY, 1, 1);
+      const baseY = Math.round(edgeY(xa, xb, xx));
+      ctx.fillStyle = `rgba(192,203,220,${alpha * 0.9})`;
+      for (let line = 1; line <= 3; line += 1) {
+        ctx.fillRect(xx, baseY - Math.round((height * line) / 3), 1, 1);
+      }
     }
     for (let xx = x1 + 2; xx <= x2 - 2; xx += 4) {
-      const baseY = Math.round(edgeY(a, b, xx));
-      ctx.fillStyle = "rgba(139,155,180,0.52)";
-      ctx.fillRect(xx, baseY - fenceHeight + 1, 1, fenceHeight - 1);
+      const baseY = Math.round(edgeY(xa, xb, xx));
+      ctx.fillStyle = `rgba(139,155,180,${alpha})`;
+      ctx.fillRect(xx, baseY - height, 1, height + 1);
     }
-  }
+  };
 
-  for (const index of back) {
+  const drawPost = (index: number, height: number) => {
     const post = points[index];
     const px0 = Math.round(post.x) - 2;
-    const py0 = Math.round(post.y) - fenceHeight - 3;
-    px(ctx, px0, py0, 5, fenceHeight + 4, PAL.ink);
-    px(ctx, px0 + 1, py0 + 1, 3, fenceHeight + 2, PAL.steel);
-    px(ctx, px0 + 1, py0 + 1, 1, fenceHeight + 2, PAL.silver);
-    px(ctx, px0 + 1, py0, 3, 1, PAL.cream);
-  }
+    const py0 = Math.round(post.y) - height;
+    px(ctx, px0, py0, 5, height + 2, PAL.ink);
+    px(ctx, px0 + 1, py0 + 1, 3, height, PAL.steel);
+    px(ctx, px0 + 1, py0 + 1, 1, height, PAL.silver);
+    px(ctx, px0, py0, 5, 1, PAL.cream);
+    px(ctx, px0 + 1, py0 + 2, 3, 1, "rgba(234,212,170,0.35)");
+  };
 
-  for (const index of [0, 1, 2, 3]) {
-    const post = points[index];
-    const px0 = Math.round(post.x) - 1;
-    const py0 = Math.round(post.y) - 6;
-    px(ctx, px0, py0, 3, 7, PAL.ink);
-    px(ctx, px0 + 1, py0 + 1, 1, 5, PAL.steel);
-  }
-
-  const leftPad = points[4];
-  const rightPad = points[7];
-  for (const [pad, color] of [
-    [leftPad, PAL.cherry],
-    [rightPad, PAL.blue],
+  // 后侧围栏
+  for (const [a, b] of [
+    [4, 5],
+    [5, 6],
+    [6, 7],
   ] as const) {
-    const px0 = Math.round(pad.x) - 2;
-    const py0 = Math.round(pad.y) - fenceHeight - 10;
+    drawMesh(points[a], points[b], 18, 0.5);
+  }
+  for (const index of [4, 5, 6, 7]) drawPost(index, 18);
+
+  // 两侧围栏
+  drawMesh(points[3], points[4], 16, 0.38);
+  drawMesh(points[7], points[0], 16, 0.38);
+
+  // 前侧围栏：立杆和网格盖在台面边缘，低透明度不挡视线
+  for (const [a, b] of [
+    [0, 1],
+    [1, 2],
+    [2, 3],
+  ] as const) {
+    drawMesh(points[a], points[b], 13, 0.26);
+  }
+  for (const index of [1, 2]) drawPost(index, 13);
+  for (const index of [0, 3]) drawPost(index, 15);
+
+  // 前角护垫
+  for (const [index, color] of [
+    [3, PAL.cherry],
+    [0, PAL.blue],
+  ] as const) {
+    const post = points[index];
+    const px0 = Math.round(post.x) - 2;
+    const py0 = Math.round(post.y) - 15 - 7;
     px(ctx, px0, py0, 5, 8, PAL.ink);
     px(ctx, px0 + 1, py0 + 1, 3, 6, color);
     px(ctx, px0 + 1, py0 + 3, 3, 1, PAL.cream);
   }
 
+  // 门口
   const gateA = points[2];
   const gateB = points[1];
   for (let xx = Math.round(gateA.x) + 2; xx < Math.round(gateB.x) - 1; xx += 4) {
@@ -295,94 +322,102 @@ export function createRoomCanvas(): HTMLCanvasElement {
 }
 
 function drawBed(ctx: Ctx) {
-  // 地面投影
-  px(ctx, 4, 40, 74, 4, "rgba(24,20,37,0.18)");
-  px(ctx, 10, 43, 62, 2, "rgba(24,20,37,0.10)");
+  // 床下地毯与影子
+  px(ctx, 2, 37, 80, 8, "rgba(24,20,37,0.16)");
+  px(ctx, 4, 40, 72, 4, PAL.clay);
+  px(ctx, 8, 41, 64, 2, PAL.sand);
 
   // 床腿
-  px(ctx, 14, 39, 7, 6, PAL.ink);
-  px(ctx, 15, 40, 5, 4, PAL.wood);
-  px(ctx, 64, 39, 7, 6, PAL.ink);
-  px(ctx, 65, 40, 5, 4, PAL.wood);
+  for (const lx of [10, 68]) {
+    px(ctx, lx, 28, 7, 14, PAL.ink);
+    px(ctx, lx + 1, 29, 5, 12, PAL.wood);
+    px(ctx, lx + 1, 29, 1, 12, PAL.woodLight);
+  }
 
-  // 床头板（左端，高）
-  px(ctx, 0, 0, 12, 44, PAL.ink);
-  px(ctx, 1, 1, 10, 42, PAL.wood);
-  px(ctx, 1, 1, 10, 2, PAL.woodLight);
-  px(ctx, 1, 7, 10, 1, "rgba(24,20,37,0.30)");
-  for (const sy of [13, 21, 29]) px(ctx, 4, sy, 1, 5, "rgba(24,20,37,0.24)");
-  px(ctx, 9, 3, 1, 40, "rgba(24,20,37,0.28)");
-  px(ctx, 2, 0, 6, 1, PAL.sand);
+  // 床架横梁（被子垂下来之前露出的那一段）
+  px(ctx, 8, 27, 68, 8, PAL.ink);
+  px(ctx, 9, 28, 66, 6, PAL.wood);
+  px(ctx, 9, 28, 66, 2, PAL.woodLight);
+  px(ctx, 9, 34, 66, 1, "rgba(24,20,37,0.32)");
 
-  // 床架前沿与床脚
-  px(ctx, 9, 32, 68, 8, PAL.ink);
-  px(ctx, 10, 33, 66, 6, PAL.wood);
-  px(ctx, 10, 33, 66, 1, PAL.woodLight);
-  px(ctx, 10, 38, 66, 1, "rgba(24,20,37,0.30)");
+  // 床头板（左，高）：整块木板 + 顶部圆角
+  px(ctx, 0, 5, 12, 29, PAL.ink);
+  px(ctx, 1, 4, 10, 30, PAL.ink);
+  px(ctx, 2, 3, 8, 1, PAL.ink);
+  px(ctx, 2, 4, 8, 29, PAL.wood);
+  px(ctx, 2, 4, 8, 1, PAL.woodLight);
+  px(ctx, 3, 8, 6, 21, "rgba(24,20,37,0.14)");
+  px(ctx, 3, 8, 6, 1, "rgba(24,20,37,0.22)");
+  px(ctx, 4, 5, 4, 1, PAL.sand);
+  px(ctx, 10, 4, 1, 29, "rgba(24,20,37,0.30)");
 
-  // 床垫
-  px(ctx, 10, 7, 66, 26, PAL.ink);
-  px(ctx, 11, 8, 64, 24, PAL.cream);
-  px(ctx, 11, 8, 64, 1, "rgba(255,255,255,0.30)");
-  px(ctx, 11, 29, 64, 3, "rgba(194,133,105,0.30)");
+  // 床垫：奶油色顶面 + 沙色前立面
+  px(ctx, 8, 14, 70, 17, PAL.ink);
+  px(ctx, 9, 15, 68, 6, PAL.cream);
+  px(ctx, 9, 15, 68, 1, "rgba(255,255,255,0.55)");
+  px(ctx, 9, 21, 68, 9, PAL.sand);
+  px(ctx, 9, 21, 68, 1, PAL.cream);
+  px(ctx, 9, 29, 68, 1, "rgba(24,20,37,0.30)");
+  px(ctx, 12, 24, 1, 4, "rgba(24,20,37,0.10)");
+  px(ctx, 60, 24, 1, 4, "rgba(24,20,37,0.10)");
 
-  // 枕头
-  px(ctx, 15, 11, 22, 1, "rgba(24,20,37,0.12)");
-  px(ctx, 14, 12, 24, 14, PAL.white);
-  px(ctx, 14, 12, 1, 1, PAL.cream);
-  px(ctx, 37, 12, 1, 1, PAL.cream);
-  px(ctx, 14, 25, 1, 1, PAL.cream);
-  px(ctx, 37, 25, 1, 1, PAL.cream);
-  px(ctx, 14, 25, 24, 1, "rgba(139,155,180,0.40)");
-  px(ctx, 27, 13, 1, 11, "rgba(139,155,180,0.28)");
-  px(ctx, 36, 13, 1, 12, "rgba(139,155,180,0.30)");
-  px(ctx, 16, 24, 20, 1, "rgba(139,155,180,0.18)");
+  // 枕头（横向的软长条）
+  px(ctx, 14, 20, 24, 2, "rgba(24,20,37,0.16)");
+  px(ctx, 19, 12, 12, 1, PAL.white);
+  px(ctx, 17, 13, 16, 1, PAL.white);
+  px(ctx, 16, 14, 18, 1, PAL.white);
+  px(ctx, 15, 15, 20, 4, PAL.white);
+  px(ctx, 16, 19, 18, 1, PAL.white);
+  px(ctx, 17, 20, 16, 1, "rgba(192,203,220,0.55)");
+  px(ctx, 15, 15, 1, 4, "rgba(255,255,255,0.85)");
+  px(ctx, 23, 14, 1, 5, "rgba(139,155,180,0.35)");
+  px(ctx, 27, 13, 1, 6, "rgba(139,155,180,0.22)");
+  px(ctx, 18, 15, 4, 1, "rgba(255,255,255,0.75)");
 
-  // 折回的床单
-  px(ctx, 39, 8, 1, 25, "rgba(24,20,37,0.20)");
-  px(ctx, 40, 9, 5, 24, PAL.cream);
-  px(ctx, 40, 9, 1, 24, "rgba(255,255,255,0.50)");
-  px(ctx, 45, 9, 1, 24, "rgba(194,133,105,0.55)");
-  px(ctx, 39, 9, 1, 2, PAL.cream);
+  // 被子：顶面 + 垂到床沿的正面，左边压一条折回来的床单
+  px(ctx, 42, 10, 34, 25, PAL.ink);
+  px(ctx, 43, 11, 32, 12, PAL.teal);
+  px(ctx, 43, 11, 32, 1, "rgba(139,155,180,0.55)");
+  px(ctx, 43, 11, 4, 12, PAL.cream);
+  px(ctx, 43, 11, 1, 12, PAL.white);
+  px(ctx, 47, 11, 1, 12, "rgba(24,20,37,0.24)");
+  for (const fx of [53, 60, 67, 72]) px(ctx, fx, 12, 1, 10, "rgba(24,20,37,0.16)");
+  px(ctx, 48, 18, 27, 1, "rgba(192,203,220,0.18)");
+  px(ctx, 43, 22, 32, 1, "rgba(139,155,180,0.30)");
+  px(ctx, 43, 23, 32, 8, "rgba(24,20,37,0.22)");
+  px(ctx, 43, 23, 32, 1, PAL.teal);
+  px(ctx, 44, 31, 30, 1, "rgba(139,155,180,0.28)");
+  px(ctx, 44, 32, 5, 2, PAL.teal);
+  px(ctx, 51, 32, 4, 1, PAL.teal);
+  px(ctx, 57, 32, 6, 2, PAL.teal);
+  px(ctx, 66, 32, 3, 1, PAL.teal);
+  px(ctx, 71, 32, 2, 2, PAL.teal);
 
-  // 被子
-  px(ctx, 44, 6, 30, 28, PAL.ink);
-  px(ctx, 45, 7, 28, 26, PAL.teal);
-  px(ctx, 45, 7, 28, 1, "rgba(139,155,180,0.38)");
-  px(ctx, 72, 9, 1, 24, "rgba(24,20,37,0.28)");
-  // 褶皱
-  px(ctx, 53, 8, 1, 19, "rgba(24,20,37,0.18)");
-  px(ctx, 61, 8, 1, 15, "rgba(24,20,37,0.14)");
-  px(ctx, 48, 18, 24, 1, "rgba(192,203,220,0.14)");
-  px(ctx, 55, 25, 15, 1, "rgba(24,20,37,0.12)");
-  // 被子垂在床沿的两道褶
-  px(ctx, 49, 31, 5, 2, PAL.teal);
-  px(ctx, 58, 31, 7, 2, PAL.teal);
-  px(ctx, 68, 31, 4, 2, PAL.teal);
+  // 小熊（坐在被子顶面上，靠床尾）
+  px(ctx, 58, 15, 9, 2, "rgba(24,20,37,0.24)");
+  px(ctx, 57, 3, 3, 3, PAL.ink);
+  px(ctx, 63, 3, 3, 3, PAL.ink);
+  px(ctx, 58, 4, 1, 1, PAL.amber);
+  px(ctx, 64, 4, 1, 1, PAL.amber);
+  px(ctx, 57, 6, 9, 8, PAL.ink);
+  px(ctx, 58, 7, 7, 6, PAL.amber);
+  px(ctx, 58, 7, 7, 1, PAL.lemon);
+  px(ctx, 59, 9, 1, 1, PAL.ink);
+  px(ctx, 63, 9, 1, 1, PAL.ink);
+  px(ctx, 60, 10, 4, 2, PAL.cream);
+  px(ctx, 61, 10, 1, 1, PAL.ink);
+  px(ctx, 56, 13, 11, 3, PAL.ink);
+  px(ctx, 57, 13, 9, 2, PAL.amber);
+  px(ctx, 57, 15, 1, 1, PAL.cream);
+  px(ctx, 65, 15, 1, 1, PAL.cream);
 
-  // 小熊（靠在床尾板前）
-  px(ctx, 59, 14, 3, 3, PAL.ink);
-  px(ctx, 60, 15, 1, 1, PAL.amber);
-  px(ctx, 66, 14, 3, 3, PAL.ink);
-  px(ctx, 67, 15, 1, 1, PAL.amber);
-  px(ctx, 59, 17, 10, 7, PAL.ink);
-  px(ctx, 60, 18, 8, 5, PAL.amber);
-  px(ctx, 60, 18, 8, 1, PAL.lemon);
-  px(ctx, 61, 19, 1, 1, PAL.ink);
-  px(ctx, 66, 19, 1, 1, PAL.ink);
-  px(ctx, 62, 21, 4, 2, PAL.cream);
-  px(ctx, 63, 21, 1, 1, PAL.ink);
-  px(ctx, 58, 24, 12, 5, PAL.ink);
-  px(ctx, 59, 25, 10, 3, PAL.amber);
-  px(ctx, 59, 27, 10, 1, "rgba(190,74,47,0.25)");
-
-  // 床尾板（右端，矮）
-  px(ctx, 74, 15, 10, 29, PAL.ink);
-  px(ctx, 75, 16, 8, 26, PAL.wood);
-  px(ctx, 75, 16, 8, 2, PAL.woodLight);
-  px(ctx, 76, 21, 6, 1, "rgba(24,20,37,0.28)");
-  px(ctx, 76, 27, 6, 1, "rgba(24,20,37,0.28)");
-  px(ctx, 82, 18, 1, 24, "rgba(24,20,37,0.25)");
+  // 床尾板（右，比床头板矮）
+  px(ctx, 76, 12, 8, 22, PAL.ink);
+  px(ctx, 77, 13, 6, 20, PAL.wood);
+  px(ctx, 77, 13, 6, 2, PAL.woodLight);
+  px(ctx, 77, 13, 1, 20, PAL.woodLight);
+  px(ctx, 77, 18, 6, 1, "rgba(24,20,37,0.18)");
+  px(ctx, 77, 25, 6, 1, "rgba(24,20,37,0.18)");
 }
 
 function drawDesk(ctx: Ctx) {
@@ -439,8 +474,11 @@ function drawChair(ctx: Ctx) {
   px(ctx, 16, 17, 3, 3, PAL.grape);
 }
 
-function drawSofa(ctx: Ctx) {
+function drawSofaBack(ctx: Ctx) {
+  // 地面投影
   px(ctx, 4, 34, 80, 5, "rgba(24,20,37,0.25)");
+
+  // 靠背
   px(ctx, 4, 0, 80, 18, PAL.ink);
   px(ctx, 5, 1, 78, 16, PAL.plum);
   px(ctx, 5, 1, 78, 1, PAL.coral);
@@ -448,22 +486,54 @@ function drawSofa(ctx: Ctx) {
   px(ctx, 8, 4, 32, 1, "rgba(255,255,255,0.35)");
   px(ctx, 48, 4, 32, 12, PAL.coral);
   px(ctx, 48, 4, 32, 1, "rgba(255,255,255,0.35)");
-  px(ctx, 0, 14, 10, 22, PAL.ink);
-  px(ctx, 1, 15, 8, 20, PAL.grape);
-  px(ctx, 78, 14, 10, 22, PAL.ink);
-  px(ctx, 79, 15, 8, 20, PAL.grape);
+
+  // 扶手靠后段
+  px(ctx, 0, 14, 10, 18, PAL.ink);
+  px(ctx, 1, 15, 8, 16, PAL.grape);
+  px(ctx, 78, 14, 10, 18, PAL.ink);
+  px(ctx, 79, 15, 8, 16, PAL.grape);
+
+  // 坐垫
   px(ctx, 5, 18, 78, 15, PAL.ink);
   px(ctx, 6, 19, 76, 13, PAL.plum);
   px(ctx, 8, 19, 34, 12, PAL.coral);
   px(ctx, 46, 19, 34, 12, PAL.coral);
   px(ctx, 8, 19, 34, 1, "rgba(255,255,255,0.3)");
   px(ctx, 46, 19, 34, 1, "rgba(255,255,255,0.3)");
-  px(ctx, 0, 32, 88, 5, PAL.ink);
-  px(ctx, 1, 33, 86, 3, PAL.grape);
-  px(ctx, 8, 36, 6, 4, PAL.ink);
-  px(ctx, 74, 36, 6, 4, PAL.ink);
+  px(ctx, 42, 20, 2, 10, "rgba(24,20,37,0.18)");
+
+  // 靠枕
   px(ctx, 12, 14, 10, 6, PAL.lemon);
   px(ctx, 66, 14, 10, 6, PAL.cyan);
+}
+
+function drawSofaFront(ctx: Ctx) {
+  // 坐垫前立面
+  px(ctx, 5, 30, 78, 4, PAL.ink);
+  px(ctx, 6, 31, 76, 2, PAL.plum);
+  px(ctx, 0, 30, 10, 4, PAL.ink);
+  px(ctx, 1, 31, 8, 2, PAL.grape);
+  px(ctx, 78, 30, 10, 4, PAL.ink);
+  px(ctx, 79, 31, 8, 2, PAL.grape);
+
+  // 底座与扶手前柱
+  px(ctx, 0, 32, 88, 8, PAL.ink);
+  px(ctx, 1, 33, 86, 6, PAL.grape);
+  px(ctx, 8, 37, 6, 3, PAL.ink);
+  px(ctx, 74, 37, 6, 3, PAL.ink);
+}
+
+export function createSofaLayers(): { back: HTMLCanvasElement; front: HTMLCanvasElement } {
+  const make = (draw: (ctx: Ctx) => void) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 88;
+    canvas.height = 40;
+    const ctx = canvas.getContext("2d")!;
+    ctx.imageSmoothingEnabled = false;
+    draw(ctx);
+    return canvas;
+  };
+  return { back: make(drawSofaBack), front: make(drawSofaFront) };
 }
 
 function drawShelf(ctx: Ctx) {
@@ -624,7 +694,6 @@ export function createPropCanvas(spec: PropSpec): HTMLCanvasElement {
   if (spec.kind === "bed") drawBed(ctx);
   if (spec.kind === "desk") drawDesk(ctx);
   if (spec.kind === "chair") drawChair(ctx);
-  if (spec.kind === "sofa") drawSofa(ctx);
   if (spec.kind === "shelf") drawShelf(ctx);
   if (spec.kind === "plant") drawPlant(ctx);
   if (spec.kind === "tank") drawTank(ctx);

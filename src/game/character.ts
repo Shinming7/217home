@@ -106,6 +106,35 @@ function flipSprite(sprite: HTMLCanvasElement, key: string): HTMLCanvasElement {
   return canvas;
 }
 
+const sitCache = new Map<string, HTMLCanvasElement>();
+
+export function getSitSprite(look: CharacterLook): HTMLCanvasElement {
+  const key = lookKey(look);
+  const cached = sitCache.get(key);
+  if (cached) return cached;
+  const canvas = document.createElement("canvas");
+  canvas.width = 16;
+  canvas.height = 20;
+  const ctx = canvas.getContext("2d")!;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(getCharacterSprite(look, "down", "idle"), 0, 0, 16, 16, 0, 0, 16, 16);
+  ctx.fillStyle = look.pants;
+  ctx.fillRect(3, 14, 10, 3);
+  ctx.fillStyle = look.pantsDark;
+  ctx.fillRect(3, 16, 10, 1);
+  ctx.fillStyle = look.skin;
+  ctx.fillRect(1, 12, 2, 3);
+  ctx.fillRect(13, 12, 2, 3);
+  ctx.fillStyle = look.shoes;
+  ctx.fillRect(2, 17, 4, 3);
+  ctx.fillRect(10, 17, 4, 3);
+  ctx.fillStyle = "rgba(255,255,255,0.18)";
+  ctx.fillRect(2, 17, 4, 1);
+  ctx.fillRect(10, 17, 4, 1);
+  sitCache.set(key, canvas);
+  return canvas;
+}
+
 export function getCharacterPortrait(look: CharacterLook): HTMLCanvasElement {
   const key = `portrait|${lookKey(look)}`;
   const cached = portraitCache.get(key);
