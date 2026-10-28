@@ -27,9 +27,6 @@
   },
   "include": [
     "src",
-    "components",
-    "hooks",
-    "lib",
     "vite.config.ts"
   ],
   "exclude": [
