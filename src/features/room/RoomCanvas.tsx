@@ -18,6 +18,15 @@ type RoomCanvasProps = {
   onEngine?: (engine: RoomEngine | null) => void;
 };
 
+type Dir = "up" | "down" | "left" | "right";
+
+const DIRS: { dir: Dir; glyph: string; label: string }[] = [
+  { dir: "up", glyph: "▲", label: "向上走" },
+  { dir: "down", glyph: "▼", label: "向下走" },
+  { dir: "left", glyph: "◀", label: "向左走" },
+  { dir: "right", glyph: "▶", label: "向右走" },
+];
+
 export function RoomCanvas({
   selfLook,
   start,
@@ -43,9 +52,8 @@ export function RoomCanvas({
   const pokerRef = useRef(onOpenPoker);
   const pausedRef = useRef(paused);
   const initialRef = useRef({ selfLook, start, phase, weather, peers, photoPreviews });
-  const padRef = useRef<HTMLDivElement | null>(null);
-  const [knob, setKnob] = useState({ x: 0, y: 0 });
-  const dragging = useRef(false);
+  const heldDirs = useRef<Set<Dir>>(new Set());
+  const [held, setHeld] = useState<Dir[]>([]);
 
   useEffect(() => {
     selectRef.current = onSelectMember;
@@ -81,11 +89,14 @@ export function RoomCanvas({
 
     const fit = () => {
       const stage = canvas.closest(".stage") as HTMLElement | null;
+      const style = stage ? getComputedStyle(stage) : null;
+      const padX = style ? parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) : 0;
+      const padY = style ? parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) : 0;
       // clientWidth/clientHeight 是布局尺寸，不受强制横屏的 rotate 影响
       const stageW = stage?.clientWidth ?? window.innerWidth;
       const stageH = stage?.clientHeight ?? window.innerHeight - 180;
-      const maxW = Math.min(stageW - 36, 1600);
-      const maxH = Math.max(220, stageH - 16);
+      const maxW = Math.min(stageW - padX - 24, 1600);
+      const maxH = Math.max(220, stageH - padY - 16);
       const raw = Math.min(maxW / 384, maxH / 256);
       const scale = raw >= 2 ? Math.min(4, Math.floor(raw)) : Math.max(0.6, raw);
       canvas.style.width = `${Math.round(384 * scale)}px`;
@@ -130,31 +141,32 @@ export function RoomCanvas({
     engineRef.current?.setPhotoPreviews(photoPreviews ?? []);
   }, [photoPreviews]);
 
-  const applyStick = (clientX: number, clientY: number) => {
-    const pad = padRef.current;
-    if (!pad) return;
-    const rect = pad.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    let dx = (clientX - cx) / (rect.width / 2);
-    let dy = (clientY - cy) / (rect.height / 2);
-    const length = Math.hypot(dx, dy);
-    if (length > 1) {
-      dx /= length;
-      dy /= length;
-    }
-    engineRef.current?.setJoystick(dx, dy);
-    setKnob({ x: dx * 16, y: dy * 16 });
+  const syncDirs = () => {
+    const dirs = heldDirs.current;
+    const x = (dirs.has("right") ? 1 : 0) - (dirs.has("left") ? 1 : 0);
+    const y = (dirs.has("down") ? 1 : 0) - (dirs.has("up") ? 1 : 0);
+    engineRef.current?.setJoystick(x, y);
+    setHeld([...dirs]);
   };
 
-  const releaseStick = () => {
-    dragging.current = false;
-    engineRef.current?.setJoystick(0, 0);
-    setKnob({ x: 0, y: 0 });
+  const pressDir = (dir: Dir) => {
+    heldDirs.current.add(dir);
+    syncDirs();
+  };
+
+  const releaseDir = (dir: Dir) => {
+    if (heldDirs.current.delete(dir)) syncDirs();
+  };
+
+  const releaseAllDirs = () => {
+    if (heldDirs.current.size) {
+      heldDirs.current.clear();
+      syncDirs();
+    }
   };
 
   useEffect(() => {
-    if (paused) releaseStick();
+    if (paused) releaseAllDirs();
   }, [paused]);
 
   return (
@@ -163,30 +175,28 @@ export function RoomCanvas({
         ref={canvasRef}
         width={384}
         height={256}
-        aria-label="217之家像素小屋。使用方向键、WASD 或左下角摇杆走动，点击住户查看档案，点击房间中央的八角笼进入对打。"
+        aria-label="217之家像素小屋。使用方向键、WASD 或左侧方向按钮走动，点击住户查看档案，点击房间中央的八角笼进入对打。"
       />
-      <div
-        ref={padRef}
-        id="room-joystick"
-        className="joystick"
-        role="presentation"
-        onPointerDown={(event) => {
-          event.preventDefault();
-          dragging.current = true;
-          event.currentTarget.setPointerCapture(event.pointerId);
-          applyStick(event.clientX, event.clientY);
-        }}
-        onPointerMove={(event) => {
-          if (dragging.current) applyStick(event.clientX, event.clientY);
-        }}
-        onPointerUp={(event) => {
-          event.currentTarget.releasePointerCapture?.(event.pointerId);
-          releaseStick();
-        }}
-        onPointerCancel={releaseStick}
-        onLostPointerCapture={releaseStick}
-      >
-        <span className="joystick-knob" style={{ transform: `translate(${knob.x}px, ${knob.y}px)` }} />
+      <div className="dpad" role="group" aria-label="移动方向键">
+        {DIRS.map(({ dir, glyph, label }) => (
+          <button
+            key={dir}
+            type="button"
+            className={`dpad-btn dpad-${dir}${held.includes(dir) ? " pressed" : ""}`}
+            aria-label={label}
+            onPointerDown={(event) => {
+              event.preventDefault();
+              pressDir(dir);
+            }}
+            onPointerUp={() => releaseDir(dir)}
+            onPointerCancel={() => releaseDir(dir)}
+            onPointerLeave={() => releaseDir(dir)}
+            onLostPointerCapture={() => releaseDir(dir)}
+            onContextMenu={(event) => event.preventDefault()}
+          >
+            {glyph}
+          </button>
+        ))}
       </div>
     </div>
   );
