@@ -1,60 +1,78 @@
-# Qoder Sites React starter
+# 217之家
 
-A React, TypeScript, Vite and Tailwind frontend with a bundled Shadcn component catalog. Vite produces static files in `dist/`. Server behavior belongs in the optional Qoder Sites Function, not a Node or framework server.
+一个给朋友小圈子用的像素风小屋网站：输入暗号入场，在房间里走动、拍照、留言、打牌、进八角笼对打。
 
-## Develop
+线上站点：<https://217-house-y6s4l6lvabi.qoder.website>
 
-Use a Node version accepted by `package.json` (`^22.13.0 || >=24.0.0`). Select an installed compatible runtime and keep it selected for installation, development and build:
+## 功能
+
+- 384×256 像素房间：16px 瓦片、A* 寻路、昼夜与天气、灯光与粒子
+- 暗号入场：首位加入者自动成为站长，站长可轮换暗号、管理成员与内容
+- 住户档案卡、打招呼与好感度
+- 照片墙：挂在墙上的三幅画进入第一人称检视，支持 2MB 内原图与像素缩略图
+- 留言板（软木板）、猜拳（选择住户人机对战）、钓鱼图鉴
+- 德州扑克联机牌局与八角笼联机对打（房间状态存于服务端）
+- 小狗 NPC 可自由走动、可摸；沙发可入座
+- 手机竖屏自动横屏，方向键在游戏区左侧外置
+
+## 技术栈
+
+- 前端：React 19、TypeScript、Vite 8、Tailwind 4
+- 房间渲染：原生 Canvas 2D，精灵与家具均为代码绘制的像素美术
+- 后端：Qoder Sites Function（Deno）+ PostgreSQL（`app` schema）+ 私有 Storage
+
+## 目录结构
+
+```text
+src/game/          房间引擎：地图、碰撞、寻路、角色、小狗、昼夜天气
+src/features/      房间、照片墙、留言板、小游戏、档案、站长面板等界面
+src/net/           API 客户端与会话处理
+functionDirectory/ 云函数（Deno）：入场、照片、留言、小游戏、联机状态
+migrations/        PostgreSQL 迁移 SQL
+dev/               本地内存版后端与本地函数入口
+scripts/           构建与版本检查脚本
+```
+
+## 本地运行
+
+需要 Node `^22.13.0 || >=24.0.0`；函数检查与本地模拟后端需要 Deno 2。
 
 ```sh
 npm ci
-npm run dev
+npm run dev:mock   # 终端 1：内存后端，127.0.0.1:8000
+npm run dev        # 终端 2：Vite，127.0.0.1:5173
 ```
 
-Use the loopback URL printed by Vite. Edit `src/App.tsx`, `src/globals.css` and the title/description in `index.html`. Replace the sample page with the requested product before presenting a first meaningful preview. Import existing UI primitives from `@/components/ui/<component>` and compose them for the site's design. The neutral starter theme is a starting point, not the finished visual direction.
+内存后端重启即清空，适合开发调试，不会写入线上数据。
 
-For production output:
+## 校验
 
 ```sh
-npm run build
-npm run preview
+npm run build          # 类型检查 + 生产构建（输出 dist/）
+npm run check:function # deno check 云函数与本地模拟后端
 ```
 
-The build fixes `NODE_ENV=production` before loading Vite, independently of the terminal environment. It checks the frontend and bundled component types and emits `dist/index.html` and assets. `npm run preview` serves this output locally. Reuse passing checks while source is unchanged; no additional unit-test suite or browser QA is required by the template.
+CI 会对每次 push 与 PR 执行同样的两项检查。
 
-## Optional Function
+## 部署
 
-The default page is entirely static and does not call a Function. For server behavior, adapt the public, credential-free example in `functions/handler.ts`. `functions/index.ts` is the Deno deployment entry point. Check `deno --version` before using a separate terminal for:
+线上使用 Qoder Sites（静态前端 + Function + PostgreSQL + 私有 Storage），发布由维护者在本地工作区完成：构建 → 准备不可变草稿 → 发布 → 线上验收。
 
-```sh
-npm run check:function
-npm run dev:function
-```
+- 合并到 `main` **不会**自动上线；需要发布时联系维护者。
+- `functionDirectory/_qoder/*` 由平台在部署时注入，仓库中不包含；`functionDirectory/index.ts` 是平台入口，本地联调请用 `dev/mock-backend.ts`。
+- 迁移 SQL 由维护者按审核后的迁移流程执行。
 
-If Deno is unavailable, the static frontend can still build and run. Keep Function validation pending until Deno or an equivalent existing Function checker is available; `npm run build` checks the frontend only. Local proxy requests also need a running compatible Function server.
+## 数据与隐私
 
-The local service binds to `127.0.0.1:8000`; Vite development and built preview proxy `/functions/v1/app` to it, preserving the path. Probe with an available HTTP tool or Node `fetch`; with `curl` installed, for example:
+- 所有页面与接口都需要暗号登录，暗号只以哈希形式存储。
+- 照片原图仅登录住户可见；删除照片、留言或成员需要在界面内二次确认。
+- 初始暗号写在源码中，仓库公开意味着任何人可见；首位加入者成为站长后请立即在站长面板轮换暗号。
+- 请勿提交密钥、真实照片或个人数据。
 
-```sh
-curl --fail 'http://127.0.0.1:5173/functions/v1/app?name=Visitor'
-```
+## 开源协议
 
-Use Vite's actual port if it differs. The same frontend request after deployment is routed by Qoder Sites. Local proxy configuration is not production routing. Keep local-only servers and fixtures in `dev/`, outside both publication directories. The included Function has no dependencies; add self-contained runtime imports as required. Frontend npm dependencies are not automatically installed in Functions.
+[MIT](./LICENSE)
 
-## Publish with Qoder Sites
+## 贡献
 
-Open a local conversation in this project and follow the `sites-hosting` skill. Workspace registration is optional. Use the directory returned by `get_context` with:
-
-- `webDirectory: "dist"` after the build.
-- `spa: false` for the default single page; use `true` when adding client-side deep routes that need fallback.
-- `functionDirectory: "functions"` only if the application uses the Function. Omit it for static-only delivery.
-
-The Sites tools prepare artifacts and generate the publication descriptor; publish completed hosted work by default, unless the user explicitly requests a preview first or defers publication. Do not upload the project root, `node_modules`, `dev`, or source as the web artifact. A successful build or release does not prove an external integration works.
-
-For a new database-backed React page, follow the installed `sites-building` Skill's `references/function-backend.md`. Its assembled `assets/function-backend/` example includes `Notes.tsx`, Function routes and a schema using the platform's private database credentials. For a runnable records-and-attachments workbench, use that Skill's `references/records-example.md`; its setup command assembles a new project from this starter and keeps local fixtures outside deployment outputs. Preserve and adapt its application identity and ownership checks before exposing private records. `references/database.md`, `assets/database-react/App.tsx` and `assets/database-function/` are for existing legacy allocations only. These optional assets stay in the Skill rather than being copied into every static project.
-
-For database or Storage, follow the corresponding `sites-building` references and `sites-management` capability workflow. For AI, follow `sites-build-agent-app` and keep Cloud Agents access in the Function. Application credentials belong in server-side Sites Settings; frontend environment variables are public. This starter does not implement visitor login, database permissions, Cloud resource coordination or QCA sessions; add those only for the requested feature using the existing skills.
-
-See `PROVENANCE.md` and `vendor/` for source attribution and the preserved stylesheet license.
-
-After copying the starter, rename `gitignore.template` to `.gitignore` before installing dependencies. This keeps the file available in npm and bundled CLI resources.
+见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
